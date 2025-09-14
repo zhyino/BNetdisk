@@ -1,0 +1,16 @@
+version: '3.8'
+
+services:
+  bnetdisk:
+    build: .
+    image: bnetdisk:latest
+    container_name: bnetdisk
+    restart: always
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./backup/logs:/app/backup/logs
+      - /:/host  # 挂载宿主机根目录，以便访问所有目录
+    environment:
+      - SECRET_KEY=your_secret_key_here
+      - FLASK_ENV=production
