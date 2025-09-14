@@ -1,5 +1,6 @@
 name: Build and Push Docker Image
 
+# 触发条件：main分支推送或PR
 on:
   push:
     branches: [ main ]
@@ -7,27 +8,33 @@ on:
     branches: [ main ]
 
 jobs:
-  build:
+  build-and-push:
     runs-on: ubuntu-latest
-    
     steps:
-    - uses: actions/checkout@v2
-    
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v1
-    
-    - name: Login to DockerHub
-      if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-      uses: docker/login-action@v1
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-    
-    - name: Build and push
-      uses: docker/build-push-action@v2
-      with:
-        context: .
-        push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
-        tags: |
-          ${{ secrets.DOCKERHUB_USERNAME }}/bnetdisk:latest
-          ${{ secrets.DOCKERHUB_USERNAME }}/bnetdisk:${{ github.sha }}
+      # 1. 检出代码（使用最新v4版本，避免旧版依赖废弃命令）
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. 设置Docker Buildx（最新版，支持多平台构建）
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # 3. 登录DockerHub（仅main分支推送时执行）
+      - name: Login to DockerHub
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}  # 需在仓库Secrets中配置
+          password: ${{ secrets.DOCKERHUB_TOKEN }}    # 需在仓库Secrets中配置
+
+      # 4. 构建并推送镜像（无废弃命令，符合最新规范）
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .  # 构建上下文（项目根目录）
+          push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}  # 仅推送main分支
+          tags: |
+            zhyino/bnetdisk:latest  # 镜像标签（与仓库用户名一致）
+            zhyino/bnetdisk:${{ github.sha }}  # 基于commit SHA的版本标签
+          cache-from: type=gha  # 利用GitHub缓存加速构建
+          cache-to: type=gha,mode=max  # 保存缓存供后续构建使用
