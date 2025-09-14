@@ -11,6 +11,9 @@ services:
       - "8000:8000"
     volumes:
       - ./data:/data:rw
-      - ./backup_log.txt:/app/backup_log.txt:rw
+      - ./logs:/app/logs:rw  # 日志目录映射
+      - /:/host:ro  # 只读挂载主机根目录，方便选择主机文件
     restart: unless-stopped
     user: "1000:1001"
+    environment:
+      - TZ=Asia/Shanghai

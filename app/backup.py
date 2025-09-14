@@ -1,4 +1,5 @@
 import os
+import shutil
 import threading
 import queue
 import time
@@ -21,24 +22,38 @@ class BackupWorker(threading.Thread):
             except queue.Empty:
                 continue
 
-            src_dir = task["path"]
-            self.log_callback(f"开始处理目录: {src_dir}")
+            src_dir = task["source"]
+            dest_dir = task["dest"]
+            self.log_callback(f"开始处理: {src_dir} -> {dest_dir}")
 
             for root, _, files in os.walk(src_dir):
+                # 创建目标目录结构
+                rel_path = os.path.relpath(root, src_dir)
+                target_dir = os.path.join(dest_dir, rel_path)
+                os.makedirs(target_dir, exist_ok=True)
+
                 for f in files:
                     if self._should_skip(f):
                         continue
 
-                    full_path = os.path.join(root, f)
+                    src_file = os.path.join(root, f)
+                    dest_file = os.path.join(target_dir, f)
+                    
                     with self._lock:
-                        if full_path in self._backed_up:
+                        if src_file in self._backed_up:
+                            self.log_callback(f"已备份，跳过: {src_file}")
                             continue
-                        self._backed_up.add(full_path)
+                        self._backed_up.add(src_file)
 
-                    self.log_callback(f"备份文件: {full_path}")
-                    time.sleep(0.1)
+                    try:
+                        shutil.copy2(src_file, dest_file)  # 保留元数据的复制
+                        self.log_callback(f"备份成功: {src_file} -> {dest_file}")
+                    except Exception as e:
+                        self.log_callback(f"备份失败 {src_file}: {str(e)}")
+                    
+                    time.sleep(0.01)  # 轻微延迟，避免资源占用过高
 
-            self.log_callback(f"目录处理完成: {src_dir}")
+            self.log_callback(f"处理完成: {src_dir} -> {dest_dir}")
             self.task_queue.task_done()
 
     def _should_skip(self, filename: str) -> bool:
@@ -46,7 +61,7 @@ class BackupWorker(threading.Thread):
         if self.filter_images and ext in [".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"]:
             return True
         if self.filter_nfo and ext == ".nfo":
-            return True
+            return False  # 改为False表示不过滤nfo文件
         return False
 
     def stop(self):

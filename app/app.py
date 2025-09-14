@@ -6,7 +6,9 @@ from .backup import BackupWorker
 app = Flask(__name__)
 
 task_queue = queue.Queue()
-LOG_FILE = "/app/backup_log.txt"
+LOG_DIR = "/app/logs"
+os.makedirs(LOG_DIR, exist_ok=True)
+LOG_FILE = os.path.join(LOG_DIR, "backup_log.txt")
 log_subscribers = []
 
 def log_callback(message: str):
@@ -30,12 +32,28 @@ def index():
 @app.route("/api/add", methods=["POST"])
 def api_add():
     data = request.json
-    path = data.get("path")
-    if not path or not os.path.exists(path):
-        return jsonify({"error": "目录不存在"}), 400
-    task_queue.put({"path": path})
-    log_callback(f"任务已添加: {path}")
-    return jsonify({"status": "ok"})
+    tasks = data.get("tasks", [])
+    
+    if not tasks or not isinstance(tasks, list):
+        return jsonify({"error": "无效的任务格式"}), 400
+    
+    for task in tasks:
+        source = task.get("source")
+        dest = task.get("dest")
+        
+        if not source or not dest:
+            return jsonify({"error": "路径不完整"}), 400
+            
+        if not os.path.exists(source):
+            return jsonify({"error": f"源路径不存在: {source}"}), 400
+            
+        # 确保目标目录存在
+        os.makedirs(dest, exist_ok=True)
+            
+        task_queue.put({"source": source, "dest": dest})
+        log_callback(f"任务已添加: {source} -> {dest}")
+    
+    return jsonify({"status": "ok", "count": len(tasks)})
 
 @app.route("/api/queue")
 def api_queue():
@@ -55,3 +73,6 @@ def stream():
     q = queue.Queue(maxsize=100)
     log_subscribers.append(q)
     return Response(event_stream(q), mimetype="text/event-stream")
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=8000)
