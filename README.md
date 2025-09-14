@@ -1,16 +1,11 @@
-\
-        # backup-web
+# MoviePilot Backup Web
 
-        Quick start:
+一个简易的 Web 界面备份工具，支持添加目录任务，显示队列和实时日志，支持过滤图片和 nfo 文件。
 
-        1. Prepare:
-           ```
-           touch backup_log.txt
-           mkdir -p data
-           chown 1000:1001 backup_log.txt data || true
-           ```
-        2. Start:
-           ```
-           docker-compose up -d --build
-           ```
-        3. Open: http://<host>:8000
+## 部署
+
+```bash
+docker-compose up -d --build
+```
+
+访问 <http://localhost:8000>
