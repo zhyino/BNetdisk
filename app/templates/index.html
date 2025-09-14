@@ -1,0 +1,36 @@
+\
+        <!doctype html>
+        <html lang="zh-CN">
+        <head>
+          <meta charset="utf-8" />
+          <title>备份管理</title>
+          <meta name="viewport" content="width=device-width,initial-scale=1" />
+          <style>
+            body{font-family:Arial;margin:0}
+            .wrap{display:flex;height:100vh}
+            .left{width:36%;border-right:1px solid #ddd;padding:12px;box-sizing:border-box;overflow:auto}
+            .right{flex:1;background:#111;color:#0f0;padding:12px;overflow:auto;font-family:monospace}
+            input,button{padding:8px;width:100%;box-sizing:border-box;margin-top:6px}
+            .task{border:1px solid #eee;padding:8px;margin-bottom:8px;border-radius:4px}
+          </style>
+        </head>
+        <body>
+          <div class="wrap">
+            <div class="left">
+              <h2>添加任务</h2>
+              <input id="src" placeholder="/path/to/source" />
+              <input id="dest" placeholder="/path/to/dest" />
+              <label><input id="filter_images" type="checkbox" checked /> 过滤图片</label>
+              <label><input id="filter_nfo" type="checkbox" checked /> 过滤 .nfo</label>
+              <button id="add">添加</button>
+              <h3>队列</h3>
+              <div id="queue"></div>
+            </div>
+            <div class="right">
+              <h2>日志</h2>
+              <pre id="log" style="white-space:pre-wrap"></pre>
+            </div>
+          </div>
+          <script src="/static/js/app.js"></script>
+        </body>
+        </html>

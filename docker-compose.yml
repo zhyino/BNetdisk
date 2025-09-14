@@ -1,0 +1,17 @@
+\
+        version: "3.8"
+        services:
+          backup-web:
+            image: ghcr.io/zhyino/bnetdisk:latest
+            build:
+              context: .
+              dockerfile: Dockerfile
+            container_name: backup-web
+            ports:
+              - "8000:8000"
+            volumes:
+              - ./data:/data:rw
+              - ./backup_log.txt:/app/backup_log.txt:rw
+              - ./app:/app:ro
+            restart: unless-stopped
+            user: "1000:1001"
