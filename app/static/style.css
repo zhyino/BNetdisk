@@ -6,7 +6,7 @@
   --green:#10b981;
   --danger:#ef4444;
   --note-bg:#f6fff7;
-  --note-text:#334155;
+  --note-text:#0b3b2e;
   --src-btn:#2563eb;
   --dst-btn:#f97316;
 }
@@ -29,11 +29,11 @@ body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial;background:var(--bg);color
 .tiny{padding:6px 8px;border-radius:8px;border:none;background:#eef2ff;color:#2563eb;cursor:pointer}
 .breadcrumb{display:flex;gap:6px;flex-wrap:wrap}
 .crumb{padding:6px 8px;border-radius:8px;border:none;background:#f1f5f9;cursor:pointer;font-size:12px}
-.entries{max-height:220px;overflow:auto;border:1px solid rgba(2,6,23,0.04);padding:8px;border-radius:8px;background:#fff}
+.entries{height:220px;overflow:auto;border:1px solid rgba(2,6,23,0.04);padding:8px;border-radius:8px;background:#fff}
 .entry{padding:6px;border-radius:6px;margin-bottom:6px;cursor:default;display:flex;justify-content:space-between;align-items:center}
 .entry.dir{background:#f8fafc;color:#0f172a;cursor:pointer}
 .entry.file{background:#fff;color:#6b7280}
-.browser .actions{border-top:1px solid rgba(2,6,23,0.04);padding-top:10px;margin-top:8px;position:sticky;bottom:8px;z-index:3;background:transparent;padding-bottom:6px}
+.browser .actions{border-top:1px solid rgba(2,6,23,0.04);padding-top:10px;margin-top:8px;position:static;background:transparent;padding-bottom:6px}
 .small{padding:8px;border-radius:8px;border:none;background:var(--green);color:#fff;cursor:pointer;font-weight:600}
 .small.src-add{background:var(--src-btn);}
 .small.dst-add{background:var(--dst-btn);}

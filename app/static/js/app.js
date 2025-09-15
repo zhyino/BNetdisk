@@ -23,7 +23,13 @@ let dsts = []; // {path, root}
 let currentSrcPath = null;
 let currentDstPath = null;
 
+let loadingRoots = false;
+let loadingSrc = false;
+let loadingDst = false;
+
 const DEFAULT_FETCH_TIMEOUT = 8000;
+let es = null;
+let pollInterval = null;
 
 function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT) {
   const controller = new AbortController();
@@ -32,6 +38,10 @@ function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT) {
 }
 
 async function loadRootsToSelects() {
+  if (loadingRoots) return;
+  loadingRoots = true;
+  refreshRootsBtn.disabled = true;
+  refreshRootsBtn.textContent = '刷新中...';
   try {
     srcRootSelect.innerHTML = '<option>加载中...</option>';
     dstRootSelect.innerHTML = '<option>加载中...</option>';
@@ -55,6 +65,10 @@ async function loadRootsToSelects() {
     srcEntries.innerHTML = '<div class="err">加载挂载点失败，请点击右上“刷新挂载点”或检查容器 volumes。</div>';
     dstEntries.innerHTML = '<div class="err">加载挂载点失败，请点击右上“刷新挂载点”或检查容器 volumes。</div>';
     console.error('loadRootsToSelects error', err);
+  } finally {
+    loadingRoots = false;
+    refreshRootsBtn.disabled = false;
+    refreshRootsBtn.textContent = '刷新挂载点';
   }
 }
 
@@ -79,6 +93,9 @@ function populateRootSelect(sel, roots) {
 }
 
 async function loadEntries(path, which) {
+  if (which === 'src' && loadingSrc) return;
+  if (which === 'dst' && loadingDst) return;
+  if (which === 'src') loadingSrc = true; else loadingDst = true;
   const container = which === 'src' ? srcEntries : dstEntries;
   const breadcrumb = which === 'src' ? srcBreadcrumb : dstBreadcrumb;
   container.innerHTML = '加载中...';
@@ -105,7 +122,7 @@ async function loadEntries(path, which) {
       else { currentDstPath = path; await loadEntries(currentDstPath, 'dst'); }
     };
     breadcrumb.appendChild(rootBtn);
-    entries.forEach(e => {
+    for (const e of entries) {
       const div = document.createElement('div');
       div.className = 'entry' + (e.is_dir ? ' dir' : ' file');
       const nameEl = document.createElement('div');
@@ -126,7 +143,7 @@ async function loadEntries(path, which) {
       div.appendChild(nameEl);
       div.appendChild(actionEl);
       container.appendChild(div);
-    });
+    }
   } catch (err) {
     if (err.name === 'AbortError') {
       container.innerHTML = '<div class="err">请求超时（目录读取可能较大或挂载点不可用），请重试或刷新挂载点。</div>';
@@ -134,6 +151,8 @@ async function loadEntries(path, which) {
       container.innerHTML = '<div class="err">加载失败: ' + (err.message || err) + '</div>';
     }
     console.error('loadEntries error', err);
+  } finally {
+    if (which === 'src') loadingSrc = false; else loadingDst = false;
   }
 }
 
@@ -243,19 +262,52 @@ async function loadQueue() {
 }
 
 function initLogStream() {
-  try {
-    const es = new EventSource('/stream');
-    es.onmessage = (e) => {
-      logEl.textContent += e.data + '\n';
-      logEl.scrollTop = logEl.scrollHeight;
-    };
-    es.onerror = (e) => {
-      console.warn('EventSource error', e);
-      logEl.textContent += new Date().toISOString() + ' [WARN] 事件流断开或发生错误，浏览器将尝试重连。\n';
-    };
-  } catch (err) {
-    logEl.textContent += new Date().toISOString() + ' [ERROR] 无法建立事件流: ' + err.message + '\n';
+  if (!!window.EventSource) {
+    try {
+      es = new EventSource('/stream');
+      let firstMsg = true;
+      const start = Date.now();
+      es.onmessage = (e) => {
+        logEl.textContent += e.data + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+        firstMsg = false;
+      };
+      es.onerror = (e) => {
+        console.warn('EventSource error', e);
+        if (Date.now() - start > 5000) {
+          startPollingLogs();
+        }
+        if (es) {
+          try { es.close(); } catch (e) {}
+          es = null;
+        }
+      };
+    } catch (err) {
+      console.warn('EventSource init failed', err);
+      startPollingLogs();
+    }
+  } else {
+    startPollingLogs();
   }
+}
+
+async function fetchLogsOnce() {
+  try {
+    const res = await fetch('/api/logs?n=200');
+    if (!res.ok) return;
+    const j = await res.json();
+    const lines = j.lines || [];
+    logEl.textContent = lines.join('\n') + (lines.length ? '\n' : '');
+    logEl.scrollTop = logEl.scrollHeight;
+  } catch (err) {
+    console.warn('fetchLogsOnce error', err);
+  }
+}
+
+function startPollingLogs() {
+  if (pollInterval) return;
+  fetchLogsOnce();
+  pollInterval = setInterval(fetchLogsOnce, 3000);
 }
 
 refreshRootsBtn.onclick = async () => {
@@ -266,4 +318,5 @@ window.onload = () => {
   loadRootsToSelects();
   initLogStream();
   loadQueue();
+  setInterval(loadQueue, 5000); // keep queue updated
 };

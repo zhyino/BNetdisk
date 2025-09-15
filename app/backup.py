@@ -1,10 +1,5 @@
-\
 from pathlib import Path
-import os
-import threading
-import queue
-import time
-from typing import List
+import os, threading, queue, time, io
 
 def discover_mount_points():
     roots = set()
@@ -34,30 +29,50 @@ def discover_mount_points():
 class BackupWorker(threading.Thread):
     IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic', '.ico'}
 
-    def __init__(self, task_queue: queue.Queue, backup_log_path: Path, allowed_roots: List[Path], ops_per_sec: float = 20.0):
+    def __init__(self, task_queue: queue.Queue, backup_log_path: Path, allowed_roots, ops_per_sec: float = 20.0):
         super().__init__(daemon=True)
         self.task_queue = task_queue
         self.backup_log_path = Path(backup_log_path)
         self.allowed_roots = [p.resolve() for p in allowed_roots]
-        self._clients: List[queue.Queue] = []
+        self._clients = []
+        self._clients_lock = threading.RLock()
         self._backed_up = set()
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
-        self._load_backed_up()
         try:
             self.ops_per_sec = float(os.environ.get('BACKUP_RATE', str(ops_per_sec)))
         except Exception:
             self.ops_per_sec = ops_per_sec
         self._delay = 0.0 if self.ops_per_sec <= 0 else max(0.0, 1.0 / float(self.ops_per_sec))
-
-    def _load_backed_up(self):
         try:
-            if self.backup_log_path.exists():
-                with self.backup_log_path.open('r', encoding='utf-8') as f:
-                    for line in f:
-                        self._backed_up.add(line.strip())
+            self.service_log = self.backup_log_path.parent.joinpath('service_log.txt')
+            self.service_log.parent.mkdir(parents=True, exist_ok=True)
         except Exception:
-            pass
+            self.service_log = Path('/tmp/service_log.txt')
+
+    def _load_backed_up_tail(self, max_lines=200000):
+        if not self.backup_log_path.exists():
+            return 0
+        try:
+            with open(self.backup_log_path, 'rb') as f:
+                avg_line = 100
+                to_read = max_lines * avg_line
+                f.seek(0, io.SEEK_END)
+                file_size = f.tell()
+                start = max(0, file_size - to_read)
+                f.seek(start)
+                data = f.read().decode('utf-8', errors='ignore')
+            lines = data.splitlines()
+            tail = lines[-max_lines:]
+            with self._lock:
+                for line in tail:
+                    line = line.strip()
+                    if line:
+                        self._backed_up.add(line)
+            return len(tail)
+        except Exception as e:
+            self.broadcast(f"[WARN] Failed to load backup_log tail: {e}")
+            return 0
 
     def _save_backed_up(self):
         temp = self.backup_log_path.with_suffix('.tmp')
@@ -67,28 +82,49 @@ class BackupWorker(threading.Thread):
                     f.write(p + "\n")
             os.replace(str(temp), str(self.backup_log_path))
         except Exception as e:
-            self.broadcast(f"[ERROR] Failed to persist backup log: {e}")
+            self._append_service_log(f"[ERROR] Failed to persist backup log: {e}")
 
     def register_client(self):
         q = queue.Queue(maxsize=1000)
-        self._clients.append(q)
+        with self._clients_lock:
+            self._clients.append(q)
+        try:
+            q.put_nowait(f"[INFO] connected")
+        except queue.Full:
+            pass
         return q
 
     def unregister_client(self, q):
+        with self._clients_lock:
+            try:
+                self._clients.remove(q)
+            except ValueError:
+                pass
+
+    def _append_service_log(self, msg: str):
         try:
-            self._clients.remove(q)
-        except ValueError:
+            with open(self.service_log, 'a', encoding='utf-8') as f:
+                f.write(msg + "\n")
+        except Exception:
             pass
 
     def broadcast(self, msg: str):
         ts = time.strftime('%Y-%m-%d %H:%M:%S')
         line = f"{ts} {msg}"
-        print(line, flush=True)
-        for q in list(self._clients):
-            try:
-                q.put_nowait(line)
-            except queue.Full:
-                pass
+        try:
+            self._append_service_log(line)
+        except Exception:
+            pass
+        with self._clients_lock:
+            for q in list(self._clients):
+                try:
+                    q.put_nowait(line)
+                except queue.Full:
+                    pass
+        try:
+            print(line, flush=True)
+        except Exception:
+            pass
 
     def stop(self):
         self._stop_event.set()
@@ -117,7 +153,6 @@ class BackupWorker(threading.Thread):
             except Exception:
                 r = root
             try:
-                # Python 3.9+ has is_relative_to
                 if p == r or p.is_relative_to(r):
                     return True
             except Exception:
@@ -135,6 +170,12 @@ class BackupWorker(threading.Thread):
 
     def _create_placeholder(self, dest_file: Path, overwrite: bool = False) -> bool:
         try:
+            # if destination exists and we are not overwriting, consider it OK and don't replace
+            if dest_file.exists() and not overwrite:
+                return True
+        except Exception:
+            pass
+        try:
             dest_file.parent.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             self.broadcast(f"[ERROR] Cannot create parent directories for {dest_file}: {e}")
@@ -142,7 +183,8 @@ class BackupWorker(threading.Thread):
         tmp = dest_file.parent.joinpath(dest_file.name + '.tmp')
         try:
             with tmp.open('wb') as f:
-                f.write(b'\\0' * 1024)
+                f.write(b'\0' * 1024)
+            # atomic replace to avoid partial files
             os.replace(str(tmp), str(dest_file))
             return True
         except Exception as e:
@@ -155,6 +197,12 @@ class BackupWorker(threading.Thread):
             return False
 
     def run(self):
+        count = self._load_backed_up_tail(max_lines=200000)
+        if count:
+            self.broadcast(f"[INFO] Loaded {count} entries from backup_log (tail).")
+        else:
+            self.broadcast(f"[INFO] No existing backup_log entries loaded or empty file.")
+
         while not self._stop_event.is_set():
             try:
                 task = self.task_queue.get(timeout=1)
@@ -205,7 +253,6 @@ class BackupWorker(threading.Thread):
                 dest_root = dst
 
             try:
-                # protect against accidental self-copy
                 if dest_root.resolve() == src.resolve() or dest_root.resolve().is_relative_to(src.resolve()):
                     self.broadcast(f"[WARN] Computed destination would be same as or inside source, skipping: {dest_root}")
                     self.task_queue.task_done()

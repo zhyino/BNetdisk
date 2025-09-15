@@ -1,22 +1,24 @@
-\
-import os
+import os, io, itertools
 from pathlib import Path
-import queue
-import re
-import time
+import queue, re, time
 from flask import Flask, render_template, request, jsonify, Response
 from .backup import BackupWorker, discover_mount_points
 
-# Config
 APP_PORT = int(os.environ.get('APP_PORT', '18008'))
 BACKUP_DIR = Path(os.environ.get('BACKUP_DIR', '/app/data')).resolve()
 ALLOWED_ROOTS_ENV = os.environ.get('ALLOWED_ROOTS', '')
 
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 BACKUP_LOG = BACKUP_DIR.joinpath('backup_log.txt')
+SERVICE_LOG = BACKUP_DIR.joinpath('service_log.txt')
 if not BACKUP_LOG.exists():
     try:
         BACKUP_LOG.touch(exist_ok=True)
+    except Exception:
+        pass
+if not SERVICE_LOG.exists():
+    try:
+        SERVICE_LOG.touch(exist_ok=True)
     except Exception:
         pass
 
@@ -131,7 +133,6 @@ def api_add():
     added = 0
     skipped = []
     for t in tasks:
-        # Expect fields: src, src_root, dst, dst_root, mode
         try:
             src = Path(t.get('src', '')).resolve()
             dst = Path(t.get('dst', '')).resolve()
@@ -141,10 +142,9 @@ def api_add():
 
         mode = t.get('mode', 'incremental')
 
-        # Compute destination base to mirror source absolute path under dst.
         try:
             rel_from_root = src.relative_to(src.anchor)
-            dest_final = dst / rel_from_root  # e.g. src=/Video/国产剧 -> rel_from_root=Video/国产剧 -> dest_final = dst/Video/国产剧
+            dest_final = dst / rel_from_root
         except Exception:
             dest_final = dst / src.name
 
@@ -179,7 +179,6 @@ def api_add():
             worker.broadcast(f"[WARN] Cannot create dst {dest_final}: {e}")
             continue
 
-        # dest_final already mirrors the desired structure; instruct worker NOT to add extra src name
         worker.add_task(src, dest_final, filter_images=filter_images, filter_nfo=filter_nfo, mirror=False, mode=mode)
         added += 1
 
@@ -194,13 +193,40 @@ def api_queue():
             items.append(item)
     return jsonify({'queue': items})
 
+def tail_file_lines(path: Path, lines: int = 500):
+    if not path.exists():
+        return []
+    try:
+        with open(path, 'rb') as f:
+            avg_line = 200
+            to_read = lines * avg_line
+            f.seek(0, io.SEEK_END)
+            size = f.tell()
+            start = max(0, size - to_read)
+            f.seek(start)
+            data = f.read().decode('utf-8', errors='ignore')
+        all_lines = data.splitlines()
+        return all_lines[-lines:]
+    except Exception:
+        try:
+            with open(path, 'r', encoding='utf-8', errors='ignore') as f:
+                return f.readlines()[-lines:]
+        except Exception:
+            return []
+
+@app.route('/api/logs')
+def api_logs():
+    n = int(request.args.get('n', '500'))
+    lines = tail_file_lines(SERVICE_LOG, n)
+    return jsonify({'lines': lines})
+
 @app.route('/stream')
 def stream():
     def gen(q):
         try:
             while True:
                 msg = q.get()
-                yield f"data: {msg}\\n\\n"
+                yield f"data: {msg}\n\n"
         finally:
             try:
                 worker.unregister_client(q)
