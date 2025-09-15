@@ -1,4 +1,3 @@
-
 version: "3.8"
 services:
   backup-web:
@@ -10,6 +9,13 @@ services:
       - ./data:/app/data:rw
     environment:
       - BACKUP_DIR=/app/data
-      - BACKUP_RATE=20
+      - BACKUP_RATE=50
       - APP_PORT=18008
+      - GUNICORN_WORKERS=2
+      - GUNICORN_THREADS=4
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '1.0'
+          memory: 1G
