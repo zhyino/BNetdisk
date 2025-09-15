@@ -7,13 +7,16 @@ services:
     image: ghcr.io/zhyino/bnetdisk:latest
     container_name: backup-web
     ports:
-      - "8000:8000"
+      - "18008:18008"
     volumes:
-      - ./data:/app/data:rw            # backup log and other data
-      - /mnt/sda1/movies:/mnt/inputs:rw   # example host input mount, edit to your host paths
-      - /mnt/sdb1/backups:/mnt/outputs:rw # example host output mount, edit to your host paths
+      - ./data:/app/data:rw    # 容器内持久化目录（包含 backup_log.txt）
+      # 在下面添加你需要映射的宿主机目录（示例）：
+      # - /path/on/host/movies:/mnt/inputs:rw
+      # - /path/on/host/backups:/mnt/outputs:rw
     environment:
       - BACKUP_DIR=/app/data
-      - ALLOWED_ROOTS=/mnt/inputs,/mnt/outputs,/app/data
+      # 可选：手动指定允许浏览的根目录，逗号分隔
+      # - ALLOWED_ROOTS=/mnt/inputs,/mnt/outputs,/app/data
+      - APP_PORT=18008
     restart: unless-stopped
     user: "1000:1001"

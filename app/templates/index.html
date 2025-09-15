@@ -3,56 +3,69 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Backup Manager</title>
+  <title>备份管理面板</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <div class="topbar">Backup Manager</div>
+  <div class="topbar">备份管理面板</div>
   <div class="container">
     <div class="left">
-      <div class="panel">
-        <h3>Mount Roots</h3>
-        <div id="roots"></div>
+      <div class="panel card">
+        <h3>挂载根（选择你映射到容器的目录）</h3>
+        <div id="roots" class="roots"></div>
+        <div class="hint">如果你的目录未出现在列表，请在 Docker Compose 中把宿主机目录以 volumes 映射到容器并重启容器。</div>
       </div>
 
-      <div class="panel">
-        <h3>Explorer</h3>
-        <div id="cwdPath"></div>
+      <div class="panel card">
+        <h3>文件浏览器</h3>
+        <div id="cwdPath" class="cwd"></div>
         <div id="entries" class="entries"></div>
       </div>
 
-      <div class="panel pair-panel">
-        <h3>Selected</h3>
-        <div class="row">
+      <div class="panel card">
+        <h3>已选择（源 / 目标）</h3>
+        <div class="pair-row">
           <div>
-            <h4>Sources</h4>
+            <h4>来源 (Sources)</h4>
             <ul id="srcList" class="list"></ul>
           </div>
           <div>
-            <h4>Destinations</h4>
+            <h4>目标 (Destinations)</h4>
             <ul id="dstList" class="list"></ul>
           </div>
         </div>
         <div class="controls">
-          <button id="addPairs">Add Tasks (pair by index)</button>
-          <button id="clearSelected">Clear</button>
+          <label>配对方式：
+            <select id="pairMode">
+              <option value="index">按索引配对（逐项对应）</option>
+              <option value="single">单目标应用于所有来源</option>
+            </select>
+          </label>
+          <div class="btn-row">
+            <button id="addPairs">添加任务</button>
+            <button id="clearSelected">清空</button>
+          </div>
         </div>
       </div>
 
-      <div class="panel">
-        <h3>Queue</h3>
+      <div class="panel card">
+        <h3>任务队列</h3>
         <ul id="queue"></ul>
       </div>
     </div>
 
     <div class="right">
-      <div class="panel">
-        <h3>Logs</h3>
-        <pre id="log"></pre>
+      <div class="panel card">
+        <h3>运行日志</h3>
+        <pre id="log" class="log"></pre>
       </div>
     </div>
   </div>
 
+  <script>
+    const ROOTS = {{ roots | tojson }};
+    const APP_PORT = {{ app_port | tojson }};
+  </script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>

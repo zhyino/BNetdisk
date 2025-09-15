@@ -5,8 +5,14 @@ import queue
 import time
 from typing import List
 
-# Configurable via env in app: BACKUP_DIR, ALLOWED_ROOTS (list of container paths)
 class BackupWorker(threading.Thread):
+    """Worker thread that processes tasks from a queue.
+    Each task is a dict: {'src': str, 'dst': str, 'filter_images': bool, 'filter_nfo': bool}
+    It creates 1KB placeholder files at destination representing backed-up files.
+    """
+
+    IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic', '.ico'}
+
     def __init__(self, task_queue: queue.Queue, backup_log_path: Path, allowed_roots: List[Path]):
         super().__init__(daemon=True)
         self.task_queue = task_queue
@@ -15,8 +21,8 @@ class BackupWorker(threading.Thread):
         self._clients: List[queue.Queue] = []
         self._backed_up = set()
         self._lock = threading.RLock()
-        self._load_backed_up()
         self._stop_event = threading.Event()
+        self._load_backed_up()
 
     def _load_backed_up(self):
         try:
@@ -25,7 +31,7 @@ class BackupWorker(threading.Thread):
                     for line in f:
                         self._backed_up.add(line.strip())
         except Exception:
-            # best-effort load
+            # best-effort
             pass
 
     def _save_backed_up(self):
@@ -87,25 +93,21 @@ class BackupWorker(threading.Thread):
 
     def _is_filtered(self, filename: str, filter_images: bool, filter_nfo: bool) -> bool:
         ext = Path(filename).suffix.lower()
-        image_exts = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg'}
-        if filter_images and ext in image_exts:
+        if filter_images and ext in self.IMAGE_EXTS:
             return True
         if filter_nfo and ext == '.nfo':
             return True
         return False
 
-    def _create_placeholder(self, dest_file: Path):
-        # create parent dirs
+    def _create_placeholder(self, dest_file: Path) -> bool:
         dest_file.parent.mkdir(parents=True, exist_ok=True)
         tmp = dest_file.with_suffix(dest_file.suffix + '.tmp')
         try:
-            # write 1KB zeros to tmp, then atomic replace
             with tmp.open('wb') as f:
                 f.write(b'\0' * 1024)
             os.replace(str(tmp), str(dest_file))
             return True
         except FileExistsError:
-            # dest already exists, treat as success
             if tmp.exists():
                 try:
                     tmp.unlink()
@@ -135,13 +137,12 @@ class BackupWorker(threading.Thread):
 
             self.broadcast(f"[START] {src} -> {dst} (filter_images={filter_images}, filter_nfo={filter_nfo})")
 
-            # validate paths are allowed
             if not self._is_allowed_path(src):
-                self.broadcast(f"[ERROR] Source not allowed or not accessible: {src}")
+                self.broadcast(f"[ERROR] Source not allowed: {src}")
                 self.task_queue.task_done()
                 continue
             if not self._is_allowed_path(dst):
-                self.broadcast(f"[ERROR] Destination not allowed or not accessible: {dst}")
+                self.broadcast(f"[ERROR] Destination not allowed: {dst}")
                 self.task_queue.task_done()
                 continue
             if not src.exists() or not src.is_dir():
@@ -186,7 +187,6 @@ class BackupWorker(threading.Thread):
                     except Exception as e:
                         self.broadcast(f"[ERROR] processing file {fname}: {e}")
 
-            # persist index
             with self._lock:
                 self._save_backed_up()
 
