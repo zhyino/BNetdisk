@@ -116,6 +116,7 @@ class BackupWorker(threading.Thread):
             except Exception:
                 r = root
             try:
+                # Python 3.9+ has is_relative_to
                 if p == r or p.is_relative_to(r):
                     return True
             except Exception:
@@ -203,6 +204,7 @@ class BackupWorker(threading.Thread):
                 dest_root = dst
 
             try:
+                # protect against accidental self-copy
                 if dest_root.resolve() == src.resolve() or dest_root.resolve().is_relative_to(src.resolve()):
                     self.broadcast(f"[WARN] Computed destination would be same as or inside source, skipping: {dest_root}")
                     self.task_queue.task_done()

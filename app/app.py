@@ -2,6 +2,7 @@ import os
 from pathlib import Path
 import queue
 import re
+import time
 from flask import Flask, render_template, request, jsonify, Response
 from .backup import BackupWorker, discover_mount_points
 
@@ -20,14 +21,18 @@ if not BACKUP_LOG.exists():
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
-def _discover_mount_points():
-    pts = discover_mount_points()
-    return [str(p) for p in pts]
+def _discover_mount_points_safe(limit=200):
+    try:
+        pts = discover_mount_points()
+        return [str(p) for p in pts][:limit]
+    except Exception as e:
+        print(f"[WARN] discover_mount_points failed: {e}", flush=True)
+        return []
 
 if ALLOWED_ROOTS_ENV:
     ALLOWED_ROOTS = [Path(p).resolve() for p in re.split(r'\s*,\s*', ALLOWED_ROOTS_ENV) if p]
 else:
-    ALLOWED_ROOTS = [Path(p) for p in _discover_mount_points()]
+    ALLOWED_ROOTS = [Path(p) for p in _discover_mount_points_safe()]
 
 task_queue = queue.Queue()
 try:
@@ -42,7 +47,7 @@ def _is_allowed_path(p: Path) -> bool:
         p = p.resolve()
     except Exception:
         return False
-    roots = [Path(r) for r in _discover_mount_points()] + ALLOWED_ROOTS
+    roots = [Path(r) for r in _discover_mount_points_safe()] + ALLOWED_ROOTS
     pstr = str(p)
     for root in roots:
         try:
@@ -59,12 +64,16 @@ def _is_allowed_path(p: Path) -> bool:
 
 @app.route('/')
 def index():
-    roots = [str(p) for p in _discover_mount_points()]
+    roots = _discover_mount_points_safe()
     return render_template('index.html', roots=roots, app_port=APP_PORT)
 
 @app.route('/api/roots')
 def api_roots():
-    return jsonify({'roots': [str(p) for p in _discover_mount_points()]})
+    try:
+        roots = _discover_mount_points_safe()
+        return jsonify({'roots': roots})
+    except Exception as e:
+        return jsonify({'roots': [], 'error': str(e)}), 500
 
 @app.route('/api/listdir')
 def listdir():
@@ -77,9 +86,13 @@ def listdir():
     if not p.exists() or not p.is_dir():
         return jsonify({'error': 'not exists or not dir'}), 400
     entries = []
+    MAX_ENTRIES = 10000
     try:
+        count = 0
         with os.scandir(p) as it:
             for entry in it:
+                if count >= MAX_ENTRIES:
+                    break
                 try:
                     is_dir = entry.is_dir(follow_symlinks=False)
                 except Exception:
@@ -89,9 +102,10 @@ def listdir():
                     'path': str(Path(p) / entry.name),
                     'is_dir': is_dir
                 })
-    except Exception:
+                count += 1
+    except Exception as e:
         try:
-            for name in os.listdir(p):
+            for name in os.listdir(p)[:MAX_ENTRIES]:
                 entry_path = p / name
                 try:
                     is_dir = entry_path.is_dir()
@@ -102,8 +116,8 @@ def listdir():
                     'path': str(entry_path),
                     'is_dir': is_dir
                 })
-        except Exception as e:
-            return jsonify({'error': str(e)}), 500
+        except Exception as e2:
+            return jsonify({'error': str(e2)}), 500
     entries.sort(key=lambda e: (not e['is_dir'], e['name'].lower()))
     return jsonify({'path': str(p), 'entries': entries})
 

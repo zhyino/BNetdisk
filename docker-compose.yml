@@ -7,16 +7,15 @@ services:
     image: ghcr.io/zhyino/bnetdisk:latest
     container_name: backup-web
     ports:
-      - "18008:18008" # 宿主机:容器 端口映射，若 18008 冲突可改成其它端口
+      - "18008:18008"
     volumes:
-      - ./data:/app/data:rw    # 容器内持久化目录（包含 backup_log.txt），建议映射到宿主的某个目录以便备份日志持久化
+      - ./data:/app/data:rw
       # 在下面添加你需要映射的宿主机目录（示例）：
       # - /vol2/1000/Video/115:/115:rw
       # - /vol2/1000/Video/Video:/Video:rw
-      # 注意：映射后，容器内对应的挂载点（如 /115 或 /Video）会出现在 UI 的 根挂载点列表中，供你选择源/目标目录。
     environment:
       - BACKUP_DIR=/app/data
-      - BACKUP_RATE=20   # 每秒生成的占位文件速率（ops/sec），可根据磁盘性能调整，值越小越保守
+      - BACKUP_RATE=20
       - APP_PORT=18008
     restart: unless-stopped
-    user: "1000:1001"  # 可调整为合适的 UID:GID，或者删除此行以使用 root（不推荐）
+    user: "1000:1001"
