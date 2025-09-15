@@ -110,23 +110,36 @@ def api_add():
     filter_images = True
     filter_nfo = True
     added = 0
+    skipped = []
     for t in tasks:
         try:
             src = Path(t.get('src', '')).resolve()
             dst = Path(t.get('dst', '')).resolve()
         except Exception:
+            skipped.append({'task': t, 'reason': 'invalid path'})
+            continue
+        # server-side: don't allow identical src and dst
+        if str(src) == str(dst):
+            skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'src and dst identical'})
+            worker.broadcast(f"[WARN] Skipping task because src and dst are identical: {src}")
             continue
         if not _is_allowed_path(src) or not _is_allowed_path(dst):
+            skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'path not allowed'})
+            worker.broadcast(f"[WARN] Skipping task due to path not allowed: {src} or {dst}")
             continue
         if not src.exists() or not src.is_dir():
+            skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'src does not exist or not dir'})
+            worker.broadcast(f"[WARN] Skipping task because src missing or not dir: {src}")
             continue
         try:
             dst.mkdir(parents=True, exist_ok=True)
-        except Exception:
+        except Exception as e:
+            skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': f'cannot create dst: {e}'})
+            worker.broadcast(f"[WARN] Cannot create dst {dst}: {e}")
             continue
         worker.add_task(src, dst, filter_images=filter_images, filter_nfo=filter_nfo)
         added += 1
-    return jsonify({'added': added})
+    return jsonify({'added': added, 'skipped': skipped})
 
 @app.route('/api/queue')
 def api_queue():

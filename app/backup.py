@@ -52,6 +52,7 @@ class BackupWorker(threading.Thread):
     def broadcast(self, msg: str):
         ts = time.strftime('%Y-%m-%d %H:%M:%S')
         line = f"{ts} {msg}"
+        # print to console for container logs
         print(line, flush=True)
         for q in list(self._clients):
             try:
@@ -132,22 +133,27 @@ class BackupWorker(threading.Thread):
             self.broadcast(f"[START] {src} -> {dst} (filter_images={filter_images}, filter_nfo={filter_nfo})")
 
             if not self._is_allowed_path(src):
-                self.broadcast(f"[ERROR] Source not allowed: {src}")
+                self.broadcast(f"[WARN] Source not allowed: {src}")
                 self.task_queue.task_done()
                 continue
             if not self._is_allowed_path(dst):
-                self.broadcast(f"[ERROR] Destination not allowed: {dst}")
+                self.broadcast(f"[WARN] Destination not allowed: {dst}")
                 self.task_queue.task_done()
                 continue
             if not src.exists() or not src.is_dir():
-                self.broadcast(f"[ERROR] Source missing or not a directory: {src}")
+                self.broadcast(f"[WARN] Source missing or not a directory: {src}")
                 self.task_queue.task_done()
                 continue
 
             try:
                 dst.mkdir(parents=True, exist_ok=True)
             except Exception as e:
-                self.broadcast(f"[ERROR] Cannot create destination {dst}: {e}")
+                self.broadcast(f"[WARN] Cannot create destination {dst}: {e}")
+                self.task_queue.task_done()
+                continue
+
+            if str(src.resolve()) == str(dst.resolve()):
+                self.broadcast(f"[WARN] Source and destination are the same, skipping: {src}")
                 self.task_queue.task_done()
                 continue
 

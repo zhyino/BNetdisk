@@ -15,8 +15,7 @@ services:
       # - /vol2/1000/Video/Video:/Video:rw
     environment:
       - BACKUP_DIR=/app/data
-      # 如果你愿意可以手动指定允许浏览的根目录（逗号分隔）
-      # - ALLOWED_ROOTS=/115,/Video,/app/data
+      # - ALLOWED_ROOTS=/115,/Video,/app/data    # 可选手动指定
       - APP_PORT=18008
     restart: unless-stopped
     user: "1000:1001"

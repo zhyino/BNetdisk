@@ -26,13 +26,7 @@
             <button id="chooseDstBtn" class="small">设为目标并加入列表</button>
           </div>
         </div>
-        <div class="hint">注：如果某映射没有出现在下拉，请在 docker-compose 中挂载宿主目录到容器并重启。</div>
-      </div>
-
-      <div class="panel card">
-        <h3>文件浏览器（可深入选择）</h3>
-        <div id="cwdPath" class="cwd"></div>
-        <div id="entries" class="entries"></div>
+        <div class="hint">注：如果某映射没有出现在下拉，请在 docker-compose 中把宿主机目录以 volumes 映射到容器并重启容器。</div>
       </div>
 
       <div class="panel card">
