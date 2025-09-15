@@ -1,24 +1,27 @@
-# MoviePilot Backup Web
+# moviepilot-backup-web-v2
 
-一个简易的 Web 界面备份工具，支持添加目录任务，显示队列和实时日志，支持过滤图片和 nfo 文件。
+Features:
+- Web explorer to browse mounted host directories
+- Select multiple sources and destinations and add paired tasks
+- Left side: explorer + queue. Right side: real-time logs via SSE.
+- Creates 1KB placeholder files at destination (does NOT copy original files).
+- Backup index (backup_log.txt) stored under ./data (mounted as /app/data) and persisted atomically.
 
-## 功能特点
-- 多路径对配置（源路径+目标路径）
-- 实时日志显示
-- 任务队列管理
-- 自动过滤图片和nfo文件
-- 支持Docker部署，兼容Linux系统
+Quick start:
+1. Edit `docker-compose.yml` and change the example host mounts (`/mnt/sda1/movies`, `/mnt/sdb1/backups`) to your real host paths.
+2. Ensure ./data exists and is owned or writable by UID 1000 (or change `user` in compose).
+   ```bash
+   mkdir -p data
+   touch data/backup_log.txt
+   chown -R 1000:1001 data || true
+   ```
+3. Build and start:
+   ```bash
+   docker-compose up -d --build
+   ```
+4. Open http://<host>:8000
 
-## 部署方法
-docker-compose up -d --build
-访问 <http://localhost:8000> 即可使用
-
-## 使用说明
-1. 在左侧路径配置区添加源路径和目标路径对
-2. 点击"添加所有任务到队列"提交任务
-3. 右侧日志区可查看实时备份进度
-4. 任务队列会显示待处理的备份任务
-
-## 路径说明
-- 源路径通常以`/host/`开头，例如`/host/home/user/data`表示主机的`/home/user/data`目录
-- 目标路径通常以`/data/`开头，表示容器内的`/data`目录，映射到宿主机的`./data`目录
+Notes:
+- The service will only list and allow selecting directories under the configured ALLOWED_ROOTS (for security).
+- The container creates `backup_log.txt` inside /app/data if missing; compose maps ./data to /app/data.
+- The worker creates 1KB placeholder files (not copying original content) and records the source path in the log index.

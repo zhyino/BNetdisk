@@ -1,5 +1,4 @@
 version: "3.8"
-
 services:
   backup-web:
     build:
@@ -10,10 +9,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data:/data:rw
-      - ./logs:/app/logs:rw  # 日志目录映射
-      - /:/host:ro  # 只读挂载主机根目录，方便选择主机文件
+      - ./data:/app/data:rw            # backup log and other data
+      - /mnt/sda1/movies:/mnt/inputs:rw   # example host input mount, edit to your host paths
+      - /mnt/sdb1/backups:/mnt/outputs:rw # example host output mount, edit to your host paths
+    environment:
+      - BACKUP_DIR=/app/data
+      - ALLOWED_ROOTS=/mnt/inputs,/mnt/outputs,/app/data
     restart: unless-stopped
     user: "1000:1001"
-    environment:
-      - TZ=Asia/Shanghai

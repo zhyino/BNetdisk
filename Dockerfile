@@ -2,15 +2,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# 安装依赖
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt /app/requirements.txt
+RUN pip install --no-cache-dir -r /app/requirements.txt
 
-# 复制应用代码
-COPY . .
+COPY app /app/app
+# ensure backup dir exists in image; compose may mount host folder over it
+RUN mkdir -p /app/data && mkdir -p /mnt/inputs && mkdir -p /mnt/outputs
 
-# 创建日志目录并设置权限
-RUN mkdir -p /app/logs && chown -R 1000:1001 /app/logs
+ENV PYTHONUNBUFFERED=1
+EXPOSE 8000
 
-# 运行应用
-CMD ["gunicorn", "--bind", "0.0.0.0:8000", "app.app:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:8000", "app.app:app", "--workers", "1", "--threads", "4", "--timeout", "120"]
