@@ -1,3 +1,4 @@
+/* front-end JS (keeps only latest 200 logs shown) */
 const srcRootSelect = document.getElementById('srcRootSelect');
 const dstRootSelect = document.getElementById('dstRootSelect');
 const srcEntries = document.getElementById('srcEntries');
@@ -268,7 +269,11 @@ function initLogStream() {
       let firstMsg = true;
       const start = Date.now();
       es.onmessage = (e) => {
-        logEl.textContent += e.data + '\n';
+        // keep only last 200 lines in DOM to avoid memory blowup
+        const lines = (logEl.textContent || '').split('\n').filter(Boolean);
+        lines.push(e.data);
+        const tail = lines.slice(-200);
+        logEl.textContent = tail.join('\n') + '\n';
         logEl.scrollTop = logEl.scrollHeight;
         firstMsg = false;
       };

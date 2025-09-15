@@ -1,6 +1,6 @@
-
 from pathlib import Path
-import os, threading, queue, time, io
+import os, threading, queue, time, sqlite3, io
+from collections import deque
 
 def discover_mount_points():
     roots = set()
@@ -27,110 +27,135 @@ def discover_mount_points():
         filtered.append(Path(r))
     return filtered
 
+class ServiceLogWriter(threading.Thread):
+    def __init__(self, path: Path, max_lines_keep=5000):
+        super().__init__(daemon=True)
+        self.path = Path(path)
+        self.queue = queue.Queue(maxsize=10000)
+        self.max_lines_keep = max_lines_keep
+        self.deque = deque(maxlen=max_lines_keep)
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+        except Exception:
+            pass
+        self._stop = threading.Event()
+
+    def run(self):
+        buf = []
+        last_flush = time.time()
+        while not self._stop.is_set():
+            try:
+                item = self.queue.get(timeout=1)
+                buf.append(item)
+                self.deque.append(item)
+            except queue.Empty:
+                item = None
+            # flush conditions
+            if buf and (len(buf) >= 50 or (time.time() - last_flush) > 1):
+                try:
+                    with open(self.path, 'a', encoding='utf-8') as f:
+                        f.write('\n'.join(buf) + '\n')
+                except Exception:
+                    pass
+                buf = []
+                last_flush = time.time()
+        # final flush
+        if buf:
+            try:
+                with open(self.path, 'a', encoding='utf-8') as f:
+                    f.write('\n'.join(buf) + '\n')
+            except Exception:
+                pass
+
+    def stop(self):
+        self._stop.set()
+
+    def append(self, line: str):
+        try:
+            self.queue.put_nowait(line)
+        except queue.Full:
+            # drop if queue full
+            pass
+
+    def tail_lines(self, n=200):
+        return list(self.deque)[-n:]
+
+class BackupIndex:
+    def __init__(self, dbpath: Path):
+        self.dbpath = Path(dbpath)
+        self._lock = threading.RLock()
+        self._conn = None
+        self._ensure()
+
+    def _ensure(self):
+        self.dbpath.parent.mkdir(parents=True, exist_ok=True)
+        self._conn = sqlite3.connect(str(self.dbpath), timeout=30, check_same_thread=False)
+        cur = self._conn.cursor()
+        cur.execute('PRAGMA journal_mode=WAL;')
+        cur.execute('PRAGMA synchronous=NORMAL;')
+        cur.execute('CREATE TABLE IF NOT EXISTS paths(path TEXT PRIMARY KEY)')
+        self._conn.commit()
+
+    def insert_many(self, paths):
+        if not paths:
+            return
+        with self._lock:
+            cur = self._conn.cursor()
+            try:
+                cur.executemany('INSERT OR IGNORE INTO paths(path) VALUES(?)', ((p,) for p in paths))
+                self._conn.commit()
+            except Exception:
+                try:
+                    self._conn.rollback()
+                except Exception:
+                    pass
+
+    def contains(self, path):
+        with self._lock:
+            cur = self._conn.cursor()
+            cur.execute('SELECT 1 FROM paths WHERE path=? LIMIT 1', (path,))
+            return cur.fetchone() is not None
+
 class BackupWorker(threading.Thread):
     IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic', '.ico'}
-    MAX_SERVICE_LOG_BYTES = 1_000_000
 
-    def __init__(self, task_queue: queue.Queue, backup_log_path: Path, allowed_roots, ops_per_sec: float = 20.0):
+    def __init__(self, task_queue: queue.Queue, backup_log_path: Path, index_db: Path, allowed_roots, ops_per_sec: float = 20.0, service_log_path: Path=None):
         super().__init__(daemon=True)
         self.task_queue = task_queue
         self.backup_log_path = Path(backup_log_path)
         self.allowed_roots = [p.resolve() for p in allowed_roots]
         self._clients = []
         self._clients_lock = threading.RLock()
-        self._backed_up = set()
+        self._index = BackupIndex(index_db)
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
+        self._pending_index = []
+        self._pending_index_lock = threading.RLock()
+
         try:
             self.ops_per_sec = float(os.environ.get('BACKUP_RATE', str(ops_per_sec)))
         except Exception:
             self.ops_per_sec = ops_per_sec
         self._delay = 0.0 if self.ops_per_sec <= 0 else max(0.0, 1.0 / float(self.ops_per_sec))
-        try:
-            self.service_log = self.backup_log_path.parent.joinpath('service_log.txt')
-            self.service_log.parent.mkdir(parents=True, exist_ok=True)
-        except Exception:
-            self.service_log = Path('/tmp/service_log.txt')
 
-    def _load_backed_up_tail(self, max_lines=200000):
-        if not self.backup_log_path.exists():
-            return 0
-        try:
-            with open(self.backup_log_path, 'rb') as f:
-                avg_line = 100
-                to_read = max_lines * avg_line
-                f.seek(0, io.SEEK_END)
-                file_size = f.tell()
-                start = max(0, file_size - to_read)
-                f.seek(start)
-                data = f.read().decode('utf-8', errors='ignore')
-            lines = data.splitlines()
-            tail = lines[-max_lines:]
-            with self._lock:
-                for line in tail:
-                    line = line.strip()
-                    if line:
-                        self._backed_up.add(line)
-            return len(tail)
-        except Exception as e:
-            self.broadcast(f"[WARN] Failed to load backup_log tail: {e}")
-            return 0
+        if service_log_path is None:
+            service_log_path = self.backup_log_path.parent.joinpath('service_log.txt')
+        self.service_writer = ServiceLogWriter(service_log_path)
+        self.service_writer.start()
 
-    def _save_backed_up(self):
-        temp = self.backup_log_path.with_suffix('.tmp')
+    def stop(self):
+        self._stop_event.set()
         try:
-            with temp.open('w', encoding='utf-8') as f:
-                for p in sorted(self._backed_up):
-                    f.write(p + "\\n")
-            os.replace(str(temp), str(self.backup_log_path))
-        except Exception as e:
-            self._append_service_log(f"[ERROR] Failed to persist backup log: {e}")
-
-    def register_client(self):
-        q = queue.Queue(maxsize=1000)
-        with self._clients_lock:
-            self._clients.append(q)
-        try:
-            q.put_nowait(f"[INFO] connected")
-        except queue.Full:
-            pass
-        return q
-
-    def unregister_client(self, q):
-        with self._clients_lock:
-            try:
-                self._clients.remove(q)
-            except ValueError:
-                pass
-
-    def _append_service_log(self, msg: str):
-        try:
-            with open(self.service_log, 'a', encoding='utf-8') as f:
-                f.write(msg + "\\n")
-        except Exception:
-            pass
-        # truncate/rotate to keep file bounded (best-effort)
-        try:
-            p = self.service_log
-            if p.exists():
-                size = p.stat().st_size
-                if size > self.MAX_SERVICE_LOG_BYTES * 2:
-                    try:
-                        with open(p, 'rb') as f:
-                            f.seek(-self.MAX_SERVICE_LOG_BYTES, 2)
-                            tail = f.read()
-                        with open(p, 'wb') as f:
-                            f.write(tail)
-                    except Exception:
-                        pass
+            self.service_writer.stop()
         except Exception:
             pass
 
     def broadcast(self, msg: str):
         ts = time.strftime('%Y-%m-%d %H:%M:%S')
         line = f"{ts} {msg}"
+        # push to in-memory deque and file writer
         try:
-            self._append_service_log(line)
+            self.service_writer.append(line)
         except Exception:
             pass
         with self._clients_lock:
@@ -144,19 +169,28 @@ class BackupWorker(threading.Thread):
         except Exception:
             pass
 
-    def stop(self):
-        self._stop_event.set()
+    def register_client(self):
+        q = queue.Queue(maxsize=1000)
+        with self._clients_lock:
+            self._clients.append(q)
+        try:
+            q.put_nowait(f"[INFO] connected")
+            # send recent lines
+            for l in self.service_writer.tail_lines(200):
+                try:
+                    q.put_nowait(l)
+                except queue.Full:
+                    break
+        except queue.Full:
+            pass
+        return q
 
-    def add_task(self, src: Path, dst: Path, filter_images: bool = True, filter_nfo: bool = True, mirror: bool = True, mode: str = 'incremental'):
-        self.task_queue.put({
-            'src': str(src),
-            'dst': str(dst),
-            'filter_images': bool(filter_images),
-            'filter_nfo': bool(filter_nfo),
-            'mirror': bool(mirror),
-            'mode': str(mode)
-        })
-        self.broadcast(f"[QUEUE] Added task: {src} -> {dst} (mirror={mirror}, mode={mode})")
+    def unregister_client(self, q):
+        with self._clients_lock:
+            try:
+                self._clients.remove(q)
+            except Exception:
+                pass
 
     def _is_allowed_path(self, p: Path) -> bool:
         try:
@@ -200,7 +234,7 @@ class BackupWorker(threading.Thread):
         tmp = dest_file.parent.joinpath(dest_file.name + '.tmp')
         try:
             with tmp.open('wb') as f:
-                f.write(b'\\0' * 1024)
+                f.write(b'\0' * 1024)
             os.replace(str(tmp), str(dest_file))
             return True
         except Exception as e:
@@ -212,17 +246,36 @@ class BackupWorker(threading.Thread):
             self.broadcast(f"[ERROR] Failed to create placeholder {dest_file}: {e}")
             return False
 
-    def run(self):
-        count = self._load_backed_up_tail(max_lines=200000)
-        if count:
-            self.broadcast(f"[INFO] Loaded {count} entries from backup_log (tail).")
-        else:
-            self.broadcast(f"[INFO] No existing backup_log entries loaded or empty file.")
+    def _flush_index(self):
+        with self._pending_index_lock:
+            if not self._pending_index:
+                return
+            to_write = list(self._pending_index)
+            self._pending_index.clear()
+        try:
+            self._index.insert_many(to_write)
+        except Exception as e:
+            self.broadcast(f"[WARN] index flush failed: {e}")
 
+    def add_task(self, src: Path, dst: Path, filter_images: bool = True, filter_nfo: bool = True, mirror: bool = True, mode: str = 'incremental'):
+        self.task_queue.put({
+            'src': str(src),
+            'dst': str(dst),
+            'filter_images': bool(filter_images),
+            'filter_nfo': bool(filter_nfo),
+            'mirror': bool(mirror),
+            'mode': str(mode)
+        })
+        self.broadcast(f"[QUEUE] Added task: {src} -> {dst} (mirror={mirror}, mode={mode})")
+
+    def run(self):
+        self.broadcast("[INFO] Worker started")
         while not self._stop_event.is_set():
             try:
                 task = self.task_queue.get(timeout=1)
             except queue.Empty:
+                # periodic flush
+                self._flush_index()
                 continue
 
             src = Path(task.get('src'))
@@ -280,6 +333,7 @@ class BackupWorker(threading.Thread):
 
             backed = 0
             skipped = 0
+            to_index = []
 
             overwrite = (mode == 'full')
             for dirpath, dirnames, filenames in os.walk(src):
@@ -295,16 +349,15 @@ class BackupWorker(threading.Thread):
                             src_key = str(src_file.resolve())
                         except Exception:
                             src_key = str(src_file)
-                        with self._lock:
-                            if not overwrite and src_key in self._backed_up:
-                                skipped += 1
-                                continue
+                        # use sqlite index to check duplicates
+                        if not overwrite and self._index.contains(src_key):
+                            skipped += 1
+                            continue
                         target_dir = dest_root / rel
                         target_file = target_dir / fname
                         ok = self._create_placeholder(target_file, overwrite=overwrite)
                         if ok:
-                            with self._lock:
-                                self._backed_up.add(src_key)
+                            to_index.append(src_key)
                             backed += 1
                             self.broadcast(f"[OK] {src_file} -> {target_file}")
                         else:
@@ -313,9 +366,18 @@ class BackupWorker(threading.Thread):
                         self.broadcast(f"[ERROR] processing file {fname}: {e}")
                     if self._delay > 0:
                         time.sleep(self._delay)
+                # optional: flush index per directory to avoid huge memory
+                if len(to_index) >= 200:
+                    with self._pending_index_lock:
+                        self._pending_index.extend(to_index)
+                    to_index = []
+                    self._flush_index()
 
-            with self._lock:
-                self._save_backed_up()
+            # final flush for this task
+            if to_index:
+                with self._pending_index_lock:
+                    self._pending_index.extend(to_index)
+            self._flush_index()
 
             self.broadcast(f"[DONE] {src} -> {dest_root} (backed={backed}, skipped={skipped})")
             self.task_queue.task_done()
