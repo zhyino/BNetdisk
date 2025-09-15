@@ -11,7 +11,6 @@ APP_PORT = int(os.environ.get('APP_PORT', '18008'))
 BACKUP_DIR = Path(os.environ.get('BACKUP_DIR', '/app/data')).resolve()
 ALLOWED_ROOTS_ENV = os.environ.get('ALLOWED_ROOTS', '')
 
-# ensure backup dir exists
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 BACKUP_LOG = BACKUP_DIR.joinpath('backup_log.txt')
 if not BACKUP_LOG.exists():
@@ -22,10 +21,8 @@ if not BACKUP_LOG.exists():
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
-# discover mount points if ALLOWED_ROOTS not explicitly provided
 def _discover_mount_points():
     roots = set()
-    # always include backup dir
     roots.add(str(BACKUP_DIR))
     try:
         with open('/proc/mounts', 'r') as f:
@@ -34,19 +31,15 @@ def _discover_mount_points():
                 if len(parts) >= 2:
                     mp = parts[1]
                     fst = parts[2] if len(parts) > 2 else ''
-                    # ignore pseudo filesystems
                     if fst in ('proc','sysfs','tmpfs','devtmpfs','cgroup','cgroup2','overlay','squashfs','debugfs','tracefs','securityfs','ramfs','rootfs','fusectl','mqueue'):
                         continue
-                    # ignore empty or non-absolute
                     if not mp or not mp.startswith('/'):
                         continue
                     roots.add(mp)
     except Exception:
-        # fallback: include common mount roots
         for p in ('/mnt', '/media', '/data', '/srv'):
             if Path(p).exists():
                 roots.add(p)
-    # filter out duplicates and system dirs that are too generic
     filtered = []
     for r in sorted(roots):
         if r in ('/','/proc','/sys','/dev'):
@@ -114,13 +107,15 @@ def listdir():
 def api_add():
     payload = request.get_json(force=True) or {}
     tasks = payload.get('tasks') or []
-    # filters: images & nfo filtered by default
     filter_images = True
     filter_nfo = True
     added = 0
     for t in tasks:
-        src = Path(t.get('src', '')).resolve()
-        dst = Path(t.get('dst', '')).resolve()
+        try:
+            src = Path(t.get('src', '')).resolve()
+            dst = Path(t.get('dst', '')).resolve()
+        except Exception:
+            continue
         if not _is_allowed_path(src) or not _is_allowed_path(dst):
             continue
         if not src.exists() or not src.is_dir():

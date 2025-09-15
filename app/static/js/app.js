@@ -1,28 +1,86 @@
-const rootsEl = document.getElementById('roots');
+const srcRootSelect = document.getElementById('srcRootSelect');
+const srcSubSelect = document.getElementById('srcSubSelect');
+const dstRootSelect = document.getElementById('dstRootSelect');
+const dstSubSelect = document.getElementById('dstSubSelect');
+const chooseSrcBtn = document.getElementById('chooseSrcBtn');
+const chooseDstBtn = document.getElementById('chooseDstBtn');
 const entriesEl = document.getElementById('entries');
 const cwdPathEl = document.getElementById('cwdPath');
 const srcListEl = document.getElementById('srcList');
 const dstListEl = document.getElementById('dstList');
-const queueEl = document.getElementById('queue');
-const logEl = document.getElementById('log');
 const addPairsBtn = document.getElementById('addPairs');
 const clearBtn = document.getElementById('clearSelected');
 const pairModeEl = document.getElementById('pairMode');
+const queueEl = document.getElementById('queue');
+const logEl = document.getElementById('log');
 
 let currentPath = null;
 let srcs = [];
 let dsts = [];
 
-function renderRoots(roots) {
-  rootsEl.innerHTML = '';
+async function loadRootsToSelects() {
+  const res = await fetch('/api/roots');
+  const data = await res.json();
+  const roots = data.roots || [];
+  populateRootSelect(srcRootSelect, roots);
+  populateRootSelect(dstRootSelect, roots);
+  // trigger change to populate subselects
+  if (roots.length) {
+    onRootChange(srcRootSelect, srcSubSelect);
+    onRootChange(dstRootSelect, dstSubSelect);
+  }
+}
+
+function populateRootSelect(selectEl, roots) {
+  selectEl.innerHTML = '';
   roots.forEach(r => {
-    const btn = document.createElement('button');
-    btn.className = 'root-btn';
-    btn.innerText = r;
-    btn.onclick = () => { browse(r); };
-    rootsEl.appendChild(btn);
+    const opt = document.createElement('option');
+    opt.value = r;
+    opt.innerText = r;
+    selectEl.appendChild(opt);
   });
 }
+
+async function onRootChange(rootSelect, subSelect) {
+  const root = rootSelect.value;
+  // populate subSelect with option for root itself and immediate subdirs
+  subSelect.innerHTML = '';
+  const optRoot = document.createElement('option');
+  optRoot.value = root;
+  optRoot.innerText = root + ' (根目录)';
+  subSelect.appendChild(optRoot);
+
+  try {
+    const res = await fetch('/api/listdir?path=' + encodeURIComponent(root));
+    const j = await res.json();
+    if (j.entries) {
+      j.entries.forEach(e => {
+        if (e.is_dir) {
+          const o = document.createElement('option');
+          o.value = e.path;
+          o.innerText = e.name;
+          subSelect.appendChild(o);
+        }
+      });
+    }
+  } catch (err) {
+    // ignore
+  }
+}
+
+srcRootSelect.onchange = () => onRootChange(srcRootSelect, srcSubSelect);
+dstRootSelect.onchange = () => onRootChange(dstRootSelect, dstSubSelect);
+
+chooseSrcBtn.onclick = () => {
+  const v = srcSubSelect.value || srcRootSelect.value;
+  if (v && !srcs.includes(v)) srcs.push(v);
+  renderLists();
+};
+chooseDstBtn.onclick = () => {
+  const v = dstSubSelect.value || dstRootSelect.value;
+  if (v && !dsts.includes(v)) dsts.push(v);
+  renderLists();
+};
 
 async function browse(path) {
   currentPath = path;
@@ -60,25 +118,15 @@ async function browse(path) {
     }
     const addSrc = document.createElement('button');
     addSrc.innerText = '+ 源';
-    addSrc.onclick = (ev) => { ev.stopPropagation(); addToList('src', e.path); };
+    addSrc.onclick = (ev) => { ev.stopPropagation(); if(!srcs.includes(e.path)) srcs.push(e.path); renderLists(); };
     const addDst = document.createElement('button');
     addDst.innerText = '+ 目标';
-    addDst.onclick = (ev) => { ev.stopPropagation(); addToList('dst', e.path); };
+    addDst.onclick = (ev) => { ev.stopPropagation(); if(!dsts.includes(e.path)) dsts.push(e.path); renderLists(); };
     actions.appendChild(addSrc);
     actions.appendChild(addDst);
     el.appendChild(actions);
     entriesEl.appendChild(el);
   });
-}
-
-function addToList(type, p) {
-  if (type === 'src') {
-    if (!srcs.includes(p)) srcs.push(p);
-    renderLists();
-  } else {
-    if (!dsts.includes(p)) dsts.push(p);
-    renderLists();
-  }
 }
 
 function renderLists() {
@@ -122,7 +170,6 @@ addPairsBtn.onclick = async () => {
   });
   const j = await res.json();
   if (res.ok) {
-    // remove used entries depending on mode
     if (pairModeEl.value === 'index') {
       const n = Math.min(srcs.length, dsts.length);
       srcs = srcs.slice(n);
@@ -159,8 +206,8 @@ function initLogStream() {
 }
 
 window.onload = () => {
-  renderRoots(ROOTS);
-  if (ROOTS.length) browse(ROOTS[0]);
+  loadRootsToSelects();
   initLogStream();
   loadQueue();
+  // initial browse to first root will be triggered by loadRootsToSelects onchange handlers
 };

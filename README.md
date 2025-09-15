@@ -1,29 +1,21 @@
-# moviepilot-backup-web-v3
+# moviepilot-backup-web-v4
 
-功能亮点：
-- 中文卡片化界面：左侧浏览选择（选择由 docker-compose 映射到容器的目录），右侧实时日志
-- 支持多选源与多选目标；按索引配对或单目标应用于所有源
-- 默认过滤图片及 .nfo 文件（不可关闭）
-- 创建 1KB 占位文件（不复制原始文件），并以原子方式持久化备份索引到 ./data/backup_log.txt
-- 自动发现容器内挂载点（/proc/mounts），也可通过环境变量 ALLOWED_ROOTS 指定
+更新说明：
+- 顶栏新增横向快速选择区：左右两个下拉（根路径 + 子目录），便于直接把映射根或其子目录设为 源/目标。
+- 如果你在 docker-compose 中映射了宿主目录到容器根（如 `/vol2/...:/115` 或 `/vol2/...:/Video`），它们会出现在下拉中，可以直接选择 `/115` 或 `/Video` 本身作为路径。
+- 默认过滤图片和 .nfo 文件（不可关闭）。
 
-部署说明：
-1. 编辑 `docker-compose.yml`，在 `volumes` 中添加你想映射的宿主机目录，例如：
-   ```yaml
-   - /path/on/host/movies:/mnt/inputs:rw
-   - /path/on/host/backups:/mnt/outputs:rw
-   ```
-   这些路径会出现在 Web 界面的“挂载根”列表中，供你浏览与选择。
-2. 创建并调整权限：
+部署步骤：
+1. 编辑 `docker-compose.yml`，在 `volumes` 中添加你要暴露到容器的宿主机路径（示例已注释）。
+2. 准备 data 目录并设置权限（UID 1000）:
    ```bash
    mkdir -p data
    touch data/backup_log.txt
    chown -R 1000:1001 data || true
    ```
-3. 启动服务：
-   ```bash
-   docker-compose up -d --build
-   ```
+3. 启动：`docker-compose up -d --build`
 4. 访问：`http://<server-ip>:18008`
 
-注意：页面只能浏览到容器内可访问的挂载目录；如果某个宿主目录没有出现，请确保已在 compose 中映射并重启容器。
+技术注意事项：
+- 后端使用 Python 3.11 + Flask 2.2.5 + Gunicorn 20.1.0（在 requirements.txt 中指定），代码已检查常见的兼容性和逻辑问题（缩进、路径白名单、原子写入、SSE 客户端管理等）。
+- 如果某个挂载未出现在列表，确认该路径已在 compose 中映射并重启容器（容器读取 /proc/mounts 动态发现挂载点）。

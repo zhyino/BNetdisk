@@ -6,17 +6,12 @@ import time
 from typing import List
 
 class BackupWorker(threading.Thread):
-    """Worker thread that processes tasks from a queue.
-    Each task is a dict: {'src': str, 'dst': str, 'filter_images': bool, 'filter_nfo': bool}
-    It creates 1KB placeholder files at destination representing backed-up files.
-    """
-
     IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic', '.ico'}
 
     def __init__(self, task_queue: queue.Queue, backup_log_path: Path, allowed_roots: List[Path]):
         super().__init__(daemon=True)
         self.task_queue = task_queue
-        self.backup_log_path = backup_log_path
+        self.backup_log_path = Path(backup_log_path)
         self.allowed_roots = [p.resolve() for p in allowed_roots]
         self._clients: List[queue.Queue] = []
         self._backed_up = set()
@@ -31,7 +26,6 @@ class BackupWorker(threading.Thread):
                     for line in f:
                         self._backed_up.add(line.strip())
         except Exception:
-            # best-effort
             pass
 
     def _save_backed_up(self):

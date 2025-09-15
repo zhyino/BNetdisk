@@ -13,8 +13,10 @@ body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial;background:var(--bg);color
 .right{flex:1;display:flex;flex-direction:column;gap:14px}
 .panel.card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(15,23,42,0.06);overflow:auto}
 .panel.card h3{margin:0 0 10px 0;color:#0f172a;font-size:16px}
-.roots{display:flex;flex-wrap:wrap;gap:8px}
-.root-btn{padding:8px 12px;border-radius:10px;border:1px solid rgba(15,23,42,0.06);background:#f8fafc;cursor:pointer;font-size:13px}
+.quick-row{display:flex;gap:12px;align-items:flex-end}
+.quick-col{flex:1;display:flex;flex-direction:column;gap:8px}
+.root-select,.sub-select{padding:8px;border-radius:8px;border:1px solid rgba(2,6,23,0.06);background:#fff}
+.small{padding:8px;border-radius:8px;border:none;background:#10b981;color:#fff;cursor:pointer;font-weight:600}
 .hint{color:var(--muted);font-size:12px;margin-top:8px}
 .entries{display:flex;flex-direction:column;gap:8px}
 .entry{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:8px;border:1px solid rgba(2,6,23,0.04);background:linear-gradient(180deg,#fff,#fbfdff)}
@@ -25,7 +27,7 @@ body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial;background:var(--bg);color
 .list li{display:flex;justify-content:space-between;padding:6px 8px;border-bottom:1px solid rgba(2,6,23,0.03);font-size:13px}
 .controls{margin-top:10px;display:flex;flex-direction:column;gap:8px}
 .btn-row{display:flex;gap:8px}
-button#addPairs{padding:10px 14px;background:#10b981;color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
+button#addPairs{padding:10px 14px;background:#2563eb;color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
 button#clearSelected{padding:10px 14px;background:#ef4444;color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
 #queue{list-style:none;padding:0;margin:0;max-height:160px;overflow:auto}
 #queue li{padding:8px;border-bottom:1px dashed rgba(2,6,23,0.04);font-size:13px}
