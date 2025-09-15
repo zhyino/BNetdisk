@@ -5,10 +5,35 @@ import queue
 import time
 from typing import List
 
+def discover_mount_points():
+    roots = set()
+    try:
+        with open('/proc/mounts', 'r') as f:
+            for line in f:
+                parts = line.split()
+                if len(parts) >= 2:
+                    mp = parts[1]
+                    fst = parts[2] if len(parts) > 2 else ''
+                    if fst in ('proc','sysfs','tmpfs','devtmpfs','cgroup','cgroup2','overlay','squashfs','debugfs','tracefs','securityfs','ramfs','rootfs','fusectl','mqueue'):
+                        continue
+                    if not mp or not mp.startswith('/'):
+                        continue
+                    roots.add(mp)
+    except Exception:
+        for p in ('/mnt', '/media', '/data', '/srv'):
+            if Path(p).exists():
+                roots.add(p)
+    filtered = []
+    for r in sorted(roots):
+        if r in ('/','/proc','/sys','/dev'):
+            continue
+        filtered.append(Path(r))
+    return filtered
+
 class BackupWorker(threading.Thread):
     IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic', '.ico'}
 
-    def __init__(self, task_queue: queue.Queue, backup_log_path: Path, allowed_roots: List[Path]):
+    def __init__(self, task_queue: queue.Queue, backup_log_path: Path, allowed_roots: List[Path], ops_per_sec: float = 20.0):
         super().__init__(daemon=True)
         self.task_queue = task_queue
         self.backup_log_path = Path(backup_log_path)
@@ -18,6 +43,11 @@ class BackupWorker(threading.Thread):
         self._lock = threading.RLock()
         self._stop_event = threading.Event()
         self._load_backed_up()
+        try:
+            self.ops_per_sec = float(os.environ.get('BACKUP_RATE', str(ops_per_sec)))
+        except Exception:
+            self.ops_per_sec = ops_per_sec
+        self._delay = 0.0 if self.ops_per_sec <= 0 else max(0.0, 1.0 / float(self.ops_per_sec))
 
     def _load_backed_up(self):
         try:
@@ -52,7 +82,6 @@ class BackupWorker(threading.Thread):
     def broadcast(self, msg: str):
         ts = time.strftime('%Y-%m-%d %H:%M:%S')
         line = f"{ts} {msg}"
-        # also print to stdout so docker logs capture it
         print(line, flush=True)
         for q in list(self._clients):
             try:
@@ -64,9 +93,6 @@ class BackupWorker(threading.Thread):
         self._stop_event.set()
 
     def add_task(self, src: Path, dst: Path, filter_images: bool = True, filter_nfo: bool = True, mirror: bool = True):
-        """mirror: when True, create a subdirectory in dst named like src.name and place placeholders under it.
-        The queued dict includes 'mirror' flag so run() knows how to compute the actual destination root.
-        """
         self.task_queue.put({
             'src': str(src),
             'dst': str(dst),
@@ -81,12 +107,18 @@ class BackupWorker(threading.Thread):
             p = p.resolve()
         except Exception:
             return False
-        for root in self.allowed_roots:
+        roots = list(self.allowed_roots) + discover_mount_points()
+        pstr = str(p)
+        for root in roots:
             try:
-                if p == root or p.is_relative_to(root):
+                r = root.resolve()
+            except Exception:
+                r = root
+            try:
+                if p == r or p.is_relative_to(r):
                     return True
             except Exception:
-                if str(p).startswith(str(root)):
+                if pstr.startswith(str(r)):
                     return True
         return False
 
@@ -137,7 +169,6 @@ class BackupWorker(threading.Thread):
 
             self.broadcast(f"[START] {src} -> {dst} (filter_images={filter_images}, filter_nfo={filter_nfo}, mirror={mirror})")
 
-            # validate
             if not self._is_allowed_path(src):
                 self.broadcast(f"[WARN] Source not allowed: {src}")
                 self.task_queue.task_done()
@@ -158,12 +189,10 @@ class BackupWorker(threading.Thread):
                 self.task_queue.task_done()
                 continue
 
-            # compute destination root: if mirror and dst's basename != src.basename => dst/srcname
             try:
                 src_name = src.resolve().name
             except Exception:
                 src_name = src.name
-
             try:
                 dst_name = dst.resolve().name
             except Exception:
@@ -174,14 +203,12 @@ class BackupWorker(threading.Thread):
             else:
                 dest_root = dst
 
-            # safety: avoid writing into source (dest_root inside src)
             try:
                 if dest_root.resolve() == src.resolve() or dest_root.resolve().is_relative_to(src.resolve()):
                     self.broadcast(f"[WARN] Computed destination would be same as or inside source, skipping: {dest_root}")
                     self.task_queue.task_done()
                     continue
             except Exception:
-                # best-effort; if resolve fails, skip to be safe
                 self.broadcast(f"[WARN] Could not resolve paths safely for {src} -> {dest_root}, skipping")
                 self.task_queue.task_done()
                 continue
@@ -198,7 +225,10 @@ class BackupWorker(threading.Thread):
                             skipped += 1
                             continue
                         src_file = Path(dirpath) / fname
-                        src_key = str(src_file.resolve())
+                        try:
+                            src_key = str(src_file.resolve())
+                        except Exception:
+                            src_key = str(src_file)
                         with self._lock:
                             if src_key in self._backed_up:
                                 skipped += 1
@@ -215,6 +245,8 @@ class BackupWorker(threading.Thread):
                             skipped += 1
                     except Exception as e:
                         self.broadcast(f"[ERROR] processing file {fname}: {e}")
+                    if self._delay > 0:
+                        time.sleep(self._delay)
 
             with self._lock:
                 self._save_backed_up()

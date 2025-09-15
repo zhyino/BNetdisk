@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>备份管理面板</title>
+  <title>假文件入库管理面板</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <div class="topbar">备份管理面板</div>
+  <div class="topbar">假文件入库管理面板</div>
   <div class="container">
     <div class="left">
       <div class="panel card">
@@ -22,7 +22,7 @@
             </div>
           </div>
           <div class="quick-col">
-            <label>目标目录（选择后点击“加入已选”）</label>
+            <label>目标目录（可重复添加）</label>
             <select id="dstRootSelect" class="root-select"></select>
             <select id="dstSubSelect" class="sub-select"></select>
             <div class="btn-row-small">
@@ -41,26 +41,14 @@
             <div id="srcList" class="pills"></div>
           </div>
           <div class="sel-col">
-            <h4>目标 (Destinations)</h4>
+            <h4>目标 (Destinations) — 按索引配对（第1源→第1目标，第2源→第2目标）</h4>
             <div id="dstList" class="pills"></div>
           </div>
         </div>
 
         <div class="controls">
-          <label>配对方式：
-            <select id="pairMode">
-              <option value="index">按索引配对（逐项对应）</option>
-              <option value="single">单目标应用于所有来源</option>
-            </select>
-          </label>
-          <div class="pair-explain" id="pairExplain">
-            <strong>说明：</strong>
-            <div id="explainText">按索引配对：第1个源与第1个目标配对，第2个源与第2个目标依此类推。<br/>
-            单目标应用于所有来源：选择一个目标（第一个目标），它将被应用到所有选择的源目录，适合将多个源备份到同一个目标。</div>
-          </div>
-
           <div class="btn-row">
-            <button id="addPairs" class="primary">添加任务（一键）</button>
+            <button id="addPairs" class="primary">按索引配对并添加任务</button>
             <button id="clearSelected" class="danger">清空已选</button>
           </div>
         </div>

@@ -10,7 +10,8 @@ RUN mkdir -p /app/data
 
 ENV PYTHONUNBUFFERED=1
 ENV APP_PORT=18008
+ENV BACKUP_RATE=20
 
 EXPOSE 18008
 
-CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${APP_PORT} app.app:app --workers 1 --threads 4 --timeout 120"] 
+CMD ["sh", "-c", "gunicorn -b 0.0.0.0:${APP_PORT} app.app:app --workers 1 --threads 4 --timeout 120"]

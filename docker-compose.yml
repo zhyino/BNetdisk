@@ -15,7 +15,7 @@ services:
       # - /vol2/1000/Video/Video:/Video:rw
     environment:
       - BACKUP_DIR=/app/data
-      # - ALLOWED_ROOTS=/115,/Video,/app/data    # 可选手动指定
+      - BACKUP_RATE=20
       - APP_PORT=18008
     restart: unless-stopped
     user: "1000:1001"

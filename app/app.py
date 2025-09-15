@@ -4,7 +4,7 @@ import queue
 import json
 import re
 from flask import Flask, render_template, request, jsonify, Response
-from .backup import BackupWorker
+from .backup import BackupWorker, discover_mount_points
 
 # Config
 APP_PORT = int(os.environ.get('APP_PORT', '18008'))
@@ -22,30 +22,8 @@ if not BACKUP_LOG.exists():
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
 def _discover_mount_points():
-    roots = set()
-    roots.add(str(BACKUP_DIR))
-    try:
-        with open('/proc/mounts', 'r') as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) >= 2:
-                    mp = parts[1]
-                    fst = parts[2] if len(parts) > 2 else ''
-                    if fst in ('proc','sysfs','tmpfs','devtmpfs','cgroup','cgroup2','overlay','squashfs','debugfs','tracefs','securityfs','ramfs','rootfs','fusectl','mqueue'):
-                        continue
-                    if not mp or not mp.startswith('/'):
-                        continue
-                    roots.add(mp)
-    except Exception:
-        for p in ('/mnt', '/media', '/data', '/srv'):
-            if Path(p).exists():
-                roots.add(p)
-    filtered = []
-    for r in sorted(roots):
-        if r in ('/','/proc','/sys','/dev'):
-            continue
-        filtered.append(r)
-    return filtered
+    pts = discover_mount_points()
+    return [str(p) for p in pts]
 
 if ALLOWED_ROOTS_ENV:
     ALLOWED_ROOTS = [Path(p).resolve() for p in re.split(r'\s*,\s*', ALLOWED_ROOTS_ENV) if p]
@@ -53,7 +31,11 @@ else:
     ALLOWED_ROOTS = [Path(p) for p in _discover_mount_points()]
 
 task_queue = queue.Queue()
-worker = BackupWorker(task_queue, BACKUP_LOG, ALLOWED_ROOTS)
+try:
+    default_rate = float(os.environ.get('BACKUP_RATE', '20'))
+except Exception:
+    default_rate = 20.0
+worker = BackupWorker(task_queue, BACKUP_LOG, ALLOWED_ROOTS, ops_per_sec=default_rate)
 worker.start()
 
 def _is_allowed_path(p: Path) -> bool:
@@ -61,12 +43,18 @@ def _is_allowed_path(p: Path) -> bool:
         p = p.resolve()
     except Exception:
         return False
-    for root in ALLOWED_ROOTS:
+    roots = [Path(r) for r in _discover_mount_points()] + ALLOWED_ROOTS
+    pstr = str(p)
+    for root in roots:
         try:
-            if p == root or p.is_relative_to(root):
+            r = root.resolve()
+        except Exception:
+            r = root
+        try:
+            if p == r or p.is_relative_to(r):
                 return True
         except Exception:
-            if str(p).startswith(str(root)):
+            if pstr.startswith(str(r)):
                 return True
     return False
 
@@ -93,10 +81,14 @@ def listdir():
     try:
         with os.scandir(p) as it:
             for entry in it:
+                try:
+                    is_dir = entry.is_dir(follow_symlinks=False)
+                except Exception:
+                    is_dir = False
                 entries.append({
                     'name': entry.name,
                     'path': str(Path(p) / entry.name),
-                    'is_dir': entry.is_dir()
+                    'is_dir': is_dir
                 })
     except Exception as e:
         return jsonify({'error': str(e)}), 500
@@ -107,7 +99,6 @@ def listdir():
 def api_add():
     payload = request.get_json(force=True) or {}
     tasks = payload.get('tasks') or []
-    # filters (always on)
     filter_images = True
     filter_nfo = True
     added = 0
@@ -120,13 +111,11 @@ def api_add():
             skipped.append({'task': t, 'reason': 'invalid path'})
             continue
 
-        # compute destination subdir (mirror behavior)
         try:
             src_name = src.name
         except Exception:
             src_name = Path(t.get('src', '')).name
 
-        # if dst already ends with same name, treat mirror as False (no extra nesting)
         mirror = True
         try:
             if dst.name == src_name:
@@ -134,16 +123,13 @@ def api_add():
         except Exception:
             mirror = True
 
-        # compute potential dst_root to validate against src to avoid self-copying
         potential_dst_root = dst / src_name if mirror else dst
 
-        # server-side checks
         try:
             if str(src) == str(dst):
                 skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'src and dst identical'})
                 worker.broadcast(f"[WARN] Skipping task because src and dst are identical: {src}")
                 continue
-            # avoid potential_dst_root inside source or equal to source
             if potential_dst_root.resolve() == src.resolve() or potential_dst_root.resolve().is_relative_to(src.resolve()):
                 skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'destination would be inside source or identical'})
                 worker.broadcast(f"[WARN] Skipping task because destination would be inside or equal to source: {potential_dst_root}")

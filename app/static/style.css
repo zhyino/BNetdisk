@@ -26,7 +26,6 @@ body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial;background:var(--bg);color
 .pill{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:10px;background:#f8fafc;border:1px solid rgba(2,6,23,0.04);font-size:13px}
 .pill .pname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:380px}
 .pill .pactions button{background:#2563eb;color:#fff;border:none;padding:6px 8px;border-radius:8px;cursor:pointer}
-.pair-explain{font-size:13px;margin-top:8px;color:var(--muted)}
 .btn-row{display:flex;gap:8px;margin-top:10px}
 .primary{padding:10px 14px;background:var(--accent);color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
 .danger{padding:10px 14px;background:var(--danger);color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
