@@ -92,15 +92,16 @@ class BackupWorker(threading.Thread):
     def stop(self):
         self._stop_event.set()
 
-    def add_task(self, src: Path, dst: Path, filter_images: bool = True, filter_nfo: bool = True, mirror: bool = True):
+    def add_task(self, src: Path, dst: Path, filter_images: bool = True, filter_nfo: bool = True, mirror: bool = True, mode: str = 'incremental'):
         self.task_queue.put({
             'src': str(src),
             'dst': str(dst),
             'filter_images': bool(filter_images),
             'filter_nfo': bool(filter_nfo),
-            'mirror': bool(mirror)
+            'mirror': bool(mirror),
+            'mode': str(mode)
         })
-        self.broadcast(f"[QUEUE] Added task: {src} -> {dst} (mirror={mirror})")
+        self.broadcast(f"[QUEUE] Added task: {src} -> {dst} (mirror={mirror}, mode={mode})")
 
     def _is_allowed_path(self, p: Path) -> bool:
         try:
@@ -130,27 +131,24 @@ class BackupWorker(threading.Thread):
             return True
         return False
 
-    def _create_placeholder(self, dest_file: Path) -> bool:
-        dest_file.parent.mkdir(parents=True, exist_ok=True)
-        tmp = dest_file.with_suffix(dest_file.suffix + '.tmp')
+    def _create_placeholder(self, dest_file: Path, overwrite: bool = False) -> bool:
+        try:
+            dest_file.parent.mkdir(parents=True, exist_ok=True)
+        except Exception as e:
+            self.broadcast(f"[ERROR] Cannot create parent directories for {dest_file}: {e}")
+            return False
+        tmp = dest_file.parent.joinpath(dest_file.name + '.tmp')
         try:
             with tmp.open('wb') as f:
                 f.write(b'\0' * 1024)
             os.replace(str(tmp), str(dest_file))
             return True
-        except FileExistsError:
-            if tmp.exists():
-                try:
-                    tmp.unlink()
-                except Exception:
-                    pass
-            return True
         except Exception as e:
-            if tmp.exists():
-                try:
+            try:
+                if tmp.exists():
                     tmp.unlink()
-                except Exception:
-                    pass
+            except Exception:
+                pass
             self.broadcast(f"[ERROR] Failed to create placeholder {dest_file}: {e}")
             return False
 
@@ -166,8 +164,9 @@ class BackupWorker(threading.Thread):
             filter_images = task.get('filter_images', True)
             filter_nfo = task.get('filter_nfo', True)
             mirror = task.get('mirror', True)
+            mode = task.get('mode', 'incremental')
 
-            self.broadcast(f"[START] {src} -> {dst} (filter_images={filter_images}, filter_nfo={filter_nfo}, mirror={mirror})")
+            self.broadcast(f"[START] {src} -> {dst} (filter_images={filter_images}, filter_nfo={filter_nfo}, mirror={mirror}, mode={mode})")
 
             if not self._is_allowed_path(src):
                 self.broadcast(f"[WARN] Source not allowed: {src}")
@@ -216,6 +215,7 @@ class BackupWorker(threading.Thread):
             backed = 0
             skipped = 0
 
+            overwrite = (mode == 'full')
             for dirpath, dirnames, filenames in os.walk(src):
                 rel = os.path.relpath(dirpath, src)
                 rel = '' if rel == '.' else rel
@@ -230,12 +230,12 @@ class BackupWorker(threading.Thread):
                         except Exception:
                             src_key = str(src_file)
                         with self._lock:
-                            if src_key in self._backed_up:
+                            if not overwrite and src_key in self._backed_up:
                                 skipped += 1
                                 continue
                         target_dir = dest_root / rel
                         target_file = target_dir / fname
-                        ok = self._create_placeholder(target_file)
+                        ok = self._create_placeholder(target_file, overwrite=overwrite)
                         if ok:
                             with self._lock:
                                 self._backed_up.add(src_key)

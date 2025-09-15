@@ -1,7 +1,6 @@
 import os
 from pathlib import Path
 import queue
-import json
 import re
 from flask import Flask, render_template, request, jsonify, Response
 from .backup import BackupWorker, discover_mount_points
@@ -60,12 +59,12 @@ def _is_allowed_path(p: Path) -> bool:
 
 @app.route('/')
 def index():
-    roots = [str(p) for p in ALLOWED_ROOTS]
+    roots = [str(p) for p in _discover_mount_points()]
     return render_template('index.html', roots=roots, app_port=APP_PORT)
 
 @app.route('/api/roots')
 def api_roots():
-    return jsonify({'roots': [str(p) for p in ALLOWED_ROOTS]})
+    return jsonify({'roots': [str(p) for p in _discover_mount_points()]})
 
 @app.route('/api/listdir')
 def listdir():
@@ -90,8 +89,21 @@ def listdir():
                     'path': str(Path(p) / entry.name),
                     'is_dir': is_dir
                 })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    except Exception:
+        try:
+            for name in os.listdir(p):
+                entry_path = p / name
+                try:
+                    is_dir = entry_path.is_dir()
+                except Exception:
+                    is_dir = False
+                entries.append({
+                    'name': name,
+                    'path': str(entry_path),
+                    'is_dir': is_dir
+                })
+        except Exception as e:
+            return jsonify({'error': str(e)}), 500
     entries.sort(key=lambda e: (not e['is_dir'], e['name'].lower()))
     return jsonify({'path': str(p), 'entries': entries})
 
@@ -111,6 +123,7 @@ def api_add():
             skipped.append({'task': t, 'reason': 'invalid path'})
             continue
 
+        mode = t.get('mode', 'incremental')
         try:
             src_name = src.name
         except Exception:
@@ -156,7 +169,7 @@ def api_add():
             worker.broadcast(f"[WARN] Cannot create dst {dst}: {e}")
             continue
 
-        worker.add_task(src, dst, filter_images=filter_images, filter_nfo=filter_nfo, mirror=mirror)
+        worker.add_task(src, dst, filter_images=filter_images, filter_nfo=filter_nfo, mirror=mirror, mode=mode)
         added += 1
 
     return jsonify({'added': added, 'skipped': skipped})

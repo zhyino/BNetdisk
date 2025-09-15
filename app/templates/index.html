@@ -11,31 +11,46 @@
   <div class="container">
     <div class="left">
       <div class="panel card">
-        <h3>快速选择（横向）</h3>
+        <h3>目录浏览与选择</h3>
+        <div class="card-note">在下方选择挂载点（左侧选择源，右侧选择目标），导航进入子目录，选择任意深度的目录后点击“加入已选”。</div>
         <div class="quick-row">
           <div class="quick-col">
-            <label>源目录（可多选，选择好后点击“加入已选”）</label>
-            <select id="srcRootSelect" class="root-select"></select>
-            <select id="srcSubSelect" class="sub-select"></select>
-            <div class="btn-row-small">
-              <button id="chooseSrcBtn" class="small">加入已选（源）</button>
+            <label>源目录选择</label>
+            <div class="browser">
+              <div class="browser-row">
+                <select id="srcRootSelect" class="root-select"></select>
+                <button id="srcUpBtn" class="tiny">上层</button>
+              </div>
+              <div id="srcBreadcrumb" class="breadcrumb"></div>
+              <div id="srcEntries" class="entries"></div>
+              <div class="btn-row-small">
+                <button id="chooseSrcBtn" class="small">加入已选（源）</button>
+              </div>
+              <div class="card-note small">可多选；选择后会出现在“已选择（源）”。</div>
             </div>
           </div>
           <div class="quick-col">
-            <label>目标目录（可重复添加）</label>
-            <select id="dstRootSelect" class="root-select"></select>
-            <select id="dstSubSelect" class="sub-select"></select>
-            <div class="btn-row-small">
-              <button id="chooseDstBtn" class="small">加入已选（目标）</button>
+            <label>目标目录选择</label>
+            <div class="browser">
+              <div class="browser-row">
+                <select id="dstRootSelect" class="root-select"></select>
+                <button id="dstUpBtn" class="tiny">上层</button>
+              </div>
+              <div id="dstBreadcrumb" class="breadcrumb"></div>
+              <div id="dstEntries" class="entries"></div>
+              <div class="btn-row-small">
+                <button id="chooseDstBtn" class="small">加入已选（目标）</button>
+              </div>
+              <div class="card-note small">目标可重复添加（例如将多个源按索引配对到相同目标）。</div>
             </div>
           </div>
         </div>
-        <div class="hint">注：如果某映射没有出现在下拉，请在 docker-compose 中把宿主机目录以 volumes 映射到容器并重启容器。</div>
+        <div class="hint small">注：如果某挂载点/目录没有在下拉中出现，请在 docker-compose 中把宿主机目录以 volumes 映射到容器并重启容器。</div>
       </div>
 
       <div class="panel card">
         <h3>已选择（源 / 目标）</h3>
-        <div id="selectedWrap" class="selected-wrap">
+        <div class="selected-wrap">
           <div class="sel-col">
             <h4>来源 (Sources)</h4>
             <div id="srcList" class="pills"></div>
@@ -47,7 +62,12 @@
         </div>
 
         <div class="controls">
+          <div class="card-note small">备份模式：增量（仅处理新增的，使用 backup_log.txt）或 全量（忽略 backup_log.txt，全部重新生成并覆盖占位文件）。</div>
           <div class="btn-row">
+            <label class="mode-label"><input type="radio" name="mode" value="incremental" checked /> 增量备份</label>
+            <label class="mode-label"><input type="radio" name="mode" value="full" /> 全量备份</label>
+          </div>
+          <div class="btn-row" style="margin-top:10px;">
             <button id="addPairs" class="primary">按索引配对并添加任务</button>
             <button id="clearSelected" class="danger">清空已选</button>
           </div>
@@ -57,6 +77,7 @@
       <div class="panel card">
         <h3>任务队列</h3>
         <ul id="queue"></ul>
+        <div class="card-note small">已提交但未执行的任务显示在这里。</div>
       </div>
     </div>
 
@@ -64,6 +85,7 @@
       <div class="panel card">
         <h3>运行日志</h3>
         <pre id="log" class="log"></pre>
+        <div class="card-note small">日志由服务端实时推送，记录成功、警告与错误。</div>
       </div>
     </div>
   </div>

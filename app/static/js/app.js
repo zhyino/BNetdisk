@@ -1,7 +1,12 @@
 const srcRootSelect = document.getElementById('srcRootSelect');
-const srcSubSelect = document.getElementById('srcSubSelect');
 const dstRootSelect = document.getElementById('dstRootSelect');
-const dstSubSelect = document.getElementById('dstSubSelect');
+const srcEntries = document.getElementById('srcEntries');
+const dstEntries = document.getElementById('dstEntries');
+const srcBreadcrumb = document.getElementById('srcBreadcrumb');
+const dstBreadcrumb = document.getElementById('dstBreadcrumb');
+const srcUpBtn = document.getElementById('srcUpBtn');
+const dstUpBtn = document.getElementById('dstUpBtn');
+
 const chooseSrcBtn = document.getElementById('chooseSrcBtn');
 const chooseDstBtn = document.getElementById('chooseDstBtn');
 const srcListEl = document.getElementById('srcList');
@@ -14,6 +19,9 @@ const logEl = document.getElementById('log');
 let srcs = [];
 let dsts = [];
 
+let currentSrcPath = null;
+let currentDstPath = null;
+
 async function loadRootsToSelects() {
   const res = await fetch('/api/roots');
   const data = await res.json();
@@ -21,57 +29,100 @@ async function loadRootsToSelects() {
   populateRootSelect(srcRootSelect, roots);
   populateRootSelect(dstRootSelect, roots);
   if (roots.length) {
-    onRootChange(srcRootSelect, srcSubSelect);
-    onRootChange(dstRootSelect, dstSubSelect);
+    currentSrcPath = roots[0];
+    currentDstPath = roots[0];
+    await loadEntries(currentSrcPath, 'src');
+    await loadEntries(currentDstPath, 'dst');
   }
 }
 
-function populateRootSelect(selectEl, roots) {
-  selectEl.innerHTML = '';
+function populateRootSelect(sel, roots) {
+  sel.innerHTML = '';
   roots.forEach(r => {
     const opt = document.createElement('option');
     opt.value = r;
     opt.innerText = r;
-    selectEl.appendChild(opt);
+    sel.appendChild(opt);
   });
+  sel.onchange = async () => {
+    const v = sel.value;
+    if (sel === srcRootSelect) {
+      currentSrcPath = v;
+      await loadEntries(currentSrcPath, 'src');
+    } else {
+      currentDstPath = v;
+      await loadEntries(currentDstPath, 'dst');
+    }
+  };
 }
 
-async function onRootChange(rootSelect, subSelect) {
-  const root = rootSelect.value;
-  subSelect.innerHTML = '';
-  const optRoot = document.createElement('option');
-  optRoot.value = root;
-  optRoot.innerText = root + ' (根目录)';
-  subSelect.appendChild(optRoot);
-
+async function loadEntries(path, which) {
+  const container = which === 'src' ? srcEntries : dstEntries;
+  const breadcrumb = which === 'src' ? srcBreadcrumb : dstBreadcrumb;
+  container.innerHTML = '加载中...';
   try {
-    const res = await fetch('/api/listdir?path=' + encodeURIComponent(root));
+    const res = await fetch('/api/listdir?path=' + encodeURIComponent(path));
     const j = await res.json();
-    if (j.entries) {
-      j.entries.forEach(e => {
-        if (e.is_dir) {
-          const o = document.createElement('option');
-          o.value = e.path;
-          o.innerText = e.name;
-          subSelect.appendChild(o);
-        }
-      });
+    if (j.error) {
+      container.innerHTML = '<div class="err">' + j.error + '</div>';
+      return;
     }
+    const entries = j.entries || [];
+    container.innerHTML = '';
+    breadcrumb.innerHTML = '';
+    // root display
+    const rootBtn = document.createElement('button');
+    rootBtn.className = 'crumb';
+    rootBtn.innerText = path;
+    rootBtn.onclick = async () => {
+      if (which === 'src') { currentSrcPath = path; await loadEntries(currentSrcPath, 'src'); }
+      else { currentDstPath = path; await loadEntries(currentDstPath, 'dst'); }
+    };
+    breadcrumb.appendChild(rootBtn);
+    entries.forEach(e => {
+      const div = document.createElement('div');
+      div.className = 'entry' + (e.is_dir ? ' dir' : ' file');
+      div.innerText = e.name + (e.is_dir ? '/' : '');
+      if (e.is_dir) {
+        div.onclick = async () => {
+          if (which === 'src') {
+            currentSrcPath = e.path;
+            await loadEntries(currentSrcPath, 'src');
+          } else {
+            currentDstPath = e.path;
+            await loadEntries(currentDstPath, 'dst');
+          }
+        };
+      }
+      container.appendChild(div);
+    });
   } catch (err) {
-    // ignore fetch errors
+    container.innerHTML = '<div class="err">加载失败</div>';
   }
 }
 
-srcRootSelect.onchange = () => onRootChange(srcRootSelect, srcSubSelect);
-dstRootSelect.onchange = () => onRootChange(dstRootSelect, dstSubSelect);
+srcUpBtn.onclick = async () => {
+  if (!currentSrcPath) return;
+  const p = currentSrcPath;
+  const parent = p === '/' ? '/' : p.split('/').slice(0,-1).join('/') || '/';
+  currentSrcPath = parent;
+  await loadEntries(currentSrcPath, 'src');
+};
+dstUpBtn.onclick = async () => {
+  if (!currentDstPath) return;
+  const p = currentDstPath;
+  const parent = p === '/' ? '/' : p.split('/').slice(0,-1).join('/') || '/';
+  currentDstPath = parent;
+  await loadEntries(currentDstPath, 'dst');
+};
 
 chooseSrcBtn.onclick = () => {
-  const v = srcSubSelect.value || srcRootSelect.value;
-  if (v) srcs.push(v);
+  const v = currentSrcPath;
+  if (v) srcs.push(v); // allow duplicates if user wants
   renderLists();
 };
 chooseDstBtn.onclick = () => {
-  const v = dstSubSelect.value || dstRootSelect.value;
+  const v = currentDstPath;
   if (v) dsts.push(v);
   renderLists();
 };
@@ -99,13 +150,14 @@ window.removeDst = (i) => { dsts.splice(i,1); renderLists(); };
 addPairsBtn.onclick = async () => {
   const n = Math.min(srcs.length, dsts.length);
   if (n === 0) { alert('至少需要一对源和目标（按索引配对）'); return; }
+  const mode = document.querySelector('input[name="mode"]:checked').value || 'incremental';
   let tasks = [];
   for (let i=0;i<n;i++) {
     if (srcs[i] === dsts[i]) {
       alert('警告：源和目标相同，已跳过: ' + srcs[i]);
       continue;
     }
-    tasks.push({src: srcs[i], dst: dsts[i]});
+    tasks.push({src: srcs[i], dst: dsts[i], mode: mode});
   }
   if (tasks.length === 0) { alert('没有可添加的任务（可能因为源与目标相同）'); return; }
   const res = await fetch('/api/add', {
@@ -134,7 +186,7 @@ async function loadQueue() {
   queueEl.innerHTML = '';
   j.queue.forEach((it) => {
     const li = document.createElement('li');
-    li.innerText = `${it.src} → ${it.dst}`;
+    li.innerText = `${it.src} → ${it.dst} (mode=${it.mode||'incremental'})`;
     queueEl.appendChild(li);
   });
 }
