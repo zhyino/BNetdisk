@@ -1,3 +1,4 @@
+
 from pathlib import Path
 import os, threading, queue, time, io
 
@@ -28,6 +29,7 @@ def discover_mount_points():
 
 class BackupWorker(threading.Thread):
     IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic', '.ico'}
+    MAX_SERVICE_LOG_BYTES = 1_000_000
 
     def __init__(self, task_queue: queue.Queue, backup_log_path: Path, allowed_roots, ops_per_sec: float = 20.0):
         super().__init__(daemon=True)
@@ -79,7 +81,7 @@ class BackupWorker(threading.Thread):
         try:
             with temp.open('w', encoding='utf-8') as f:
                 for p in sorted(self._backed_up):
-                    f.write(p + "\n")
+                    f.write(p + "\\n")
             os.replace(str(temp), str(self.backup_log_path))
         except Exception as e:
             self._append_service_log(f"[ERROR] Failed to persist backup log: {e}")
@@ -104,7 +106,23 @@ class BackupWorker(threading.Thread):
     def _append_service_log(self, msg: str):
         try:
             with open(self.service_log, 'a', encoding='utf-8') as f:
-                f.write(msg + "\n")
+                f.write(msg + "\\n")
+        except Exception:
+            pass
+        # truncate/rotate to keep file bounded (best-effort)
+        try:
+            p = self.service_log
+            if p.exists():
+                size = p.stat().st_size
+                if size > self.MAX_SERVICE_LOG_BYTES * 2:
+                    try:
+                        with open(p, 'rb') as f:
+                            f.seek(-self.MAX_SERVICE_LOG_BYTES, 2)
+                            tail = f.read()
+                        with open(p, 'wb') as f:
+                            f.write(tail)
+                    except Exception:
+                        pass
         except Exception:
             pass
 
@@ -170,7 +188,6 @@ class BackupWorker(threading.Thread):
 
     def _create_placeholder(self, dest_file: Path, overwrite: bool = False) -> bool:
         try:
-            # if destination exists and we are not overwriting, consider it OK and don't replace
             if dest_file.exists() and not overwrite:
                 return True
         except Exception:
@@ -183,8 +200,7 @@ class BackupWorker(threading.Thread):
         tmp = dest_file.parent.joinpath(dest_file.name + '.tmp')
         try:
             with tmp.open('wb') as f:
-                f.write(b'\0' * 1024)
-            # atomic replace to avoid partial files
+                f.write(b'\\0' * 1024)
             os.replace(str(tmp), str(dest_file))
             return True
         except Exception as e:

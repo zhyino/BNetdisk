@@ -1,6 +1,6 @@
-import os, io, itertools
+
+import os, io, itertools, queue, re, time
 from pathlib import Path
-import queue, re, time
 from flask import Flask, render_template, request, jsonify, Response
 from .backup import BackupWorker, discover_mount_points
 
@@ -11,16 +11,11 @@ ALLOWED_ROOTS_ENV = os.environ.get('ALLOWED_ROOTS', '')
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 BACKUP_LOG = BACKUP_DIR.joinpath('backup_log.txt')
 SERVICE_LOG = BACKUP_DIR.joinpath('service_log.txt')
-if not BACKUP_LOG.exists():
-    try:
-        BACKUP_LOG.touch(exist_ok=True)
-    except Exception:
-        pass
-if not SERVICE_LOG.exists():
-    try:
-        SERVICE_LOG.touch(exist_ok=True)
-    except Exception:
-        pass
+try:
+    BACKUP_LOG.touch(exist_ok=True)
+    SERVICE_LOG.touch(exist_ok=True)
+except Exception:
+    pass
 
 app = Flask(__name__, template_folder='templates', static_folder='static')
 
@@ -38,10 +33,7 @@ else:
     ALLOWED_ROOTS = [Path(p) for p in _discover_mount_points_safe()]
 
 task_queue = queue.Queue()
-try:
-    default_rate = float(os.environ.get('BACKUP_RATE', '20'))
-except Exception:
-    default_rate = 20.0
+default_rate = float(os.environ.get('BACKUP_RATE', '20'))
 worker = BackupWorker(task_queue, BACKUP_LOG, ALLOWED_ROOTS, ops_per_sec=default_rate)
 worker.start()
 
@@ -89,7 +81,7 @@ def listdir():
     if not p.exists() or not p.is_dir():
         return jsonify({'error': 'not exists or not dir'}), 400
     entries = []
-    MAX_ENTRIES = 10000
+    MAX_ENTRIES = 2000
     try:
         count = 0
         with os.scandir(p) as it:
@@ -122,7 +114,8 @@ def listdir():
         except Exception as e2:
             return jsonify({'error': str(e2)}), 500
     entries.sort(key=lambda e: (not e['is_dir'], e['name'].lower()))
-    return jsonify({'path': str(p), 'entries': entries})
+    truncated = (len(entries) >= MAX_ENTRIES)
+    return jsonify({'path': str(p), 'entries': entries, 'truncated': truncated})
 
 @app.route('/api/add', methods=['POST'])
 def api_add():
@@ -217,6 +210,8 @@ def tail_file_lines(path: Path, lines: int = 500):
 @app.route('/api/logs')
 def api_logs():
     n = int(request.args.get('n', '500'))
+    if n > 2000:
+        n = 2000
     lines = tail_file_lines(SERVICE_LOG, n)
     return jsonify({'lines': lines})
 
@@ -225,8 +220,11 @@ def stream():
     def gen(q):
         try:
             while True:
-                msg = q.get()
-                yield f"data: {msg}\n\n"
+                try:
+                    msg = q.get(timeout=1)
+                    yield f"data: {msg}\n\n"
+                except queue.Empty:
+                    yield ": keepalive\n\n"
         finally:
             try:
                 worker.unregister_client(q)
