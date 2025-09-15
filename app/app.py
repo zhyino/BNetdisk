@@ -107,6 +107,7 @@ def listdir():
 def api_add():
     payload = request.get_json(force=True) or {}
     tasks = payload.get('tasks') or []
+    # filters (always on)
     filter_images = True
     filter_nfo = True
     added = 0
@@ -118,27 +119,60 @@ def api_add():
         except Exception:
             skipped.append({'task': t, 'reason': 'invalid path'})
             continue
-        # server-side: don't allow identical src and dst
-        if str(src) == str(dst):
-            skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'src and dst identical'})
-            worker.broadcast(f"[WARN] Skipping task because src and dst are identical: {src}")
+
+        # compute destination subdir (mirror behavior)
+        try:
+            src_name = src.name
+        except Exception:
+            src_name = Path(t.get('src', '')).name
+
+        # if dst already ends with same name, treat mirror as False (no extra nesting)
+        mirror = True
+        try:
+            if dst.name == src_name:
+                mirror = False
+        except Exception:
+            mirror = True
+
+        # compute potential dst_root to validate against src to avoid self-copying
+        potential_dst_root = dst / src_name if mirror else dst
+
+        # server-side checks
+        try:
+            if str(src) == str(dst):
+                skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'src and dst identical'})
+                worker.broadcast(f"[WARN] Skipping task because src and dst are identical: {src}")
+                continue
+            # avoid potential_dst_root inside source or equal to source
+            if potential_dst_root.resolve() == src.resolve() or potential_dst_root.resolve().is_relative_to(src.resolve()):
+                skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'destination would be inside source or identical'})
+                worker.broadcast(f"[WARN] Skipping task because destination would be inside or equal to source: {potential_dst_root}")
+                continue
+        except Exception:
+            skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'path resolution error'})
+            worker.broadcast(f"[WARN] Path resolution error for {src} or {dst}, skipping")
             continue
+
         if not _is_allowed_path(src) or not _is_allowed_path(dst):
             skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'path not allowed'})
             worker.broadcast(f"[WARN] Skipping task due to path not allowed: {src} or {dst}")
             continue
+
         if not src.exists() or not src.is_dir():
             skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'src does not exist or not dir'})
             worker.broadcast(f"[WARN] Skipping task because src missing or not dir: {src}")
             continue
+
         try:
             dst.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': f'cannot create dst: {e}'})
             worker.broadcast(f"[WARN] Cannot create dst {dst}: {e}")
             continue
-        worker.add_task(src, dst, filter_images=filter_images, filter_nfo=filter_nfo)
+
+        worker.add_task(src, dst, filter_images=filter_images, filter_nfo=filter_nfo, mirror=mirror)
         added += 1
+
     return jsonify({'added': added, 'skipped': skipped})
 
 @app.route('/api/queue')

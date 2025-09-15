@@ -14,16 +14,20 @@
         <h3>快速选择（横向）</h3>
         <div class="quick-row">
           <div class="quick-col">
-            <label>源目录</label>
+            <label>源目录（可多选，选择好后点击“加入已选”）</label>
             <select id="srcRootSelect" class="root-select"></select>
             <select id="srcSubSelect" class="sub-select"></select>
-            <button id="chooseSrcBtn" class="small">设为源并加入列表</button>
+            <div class="btn-row-small">
+              <button id="chooseSrcBtn" class="small">加入已选（源）</button>
+            </div>
           </div>
           <div class="quick-col">
-            <label>目标目录</label>
+            <label>目标目录（选择后点击“加入已选”）</label>
             <select id="dstRootSelect" class="root-select"></select>
             <select id="dstSubSelect" class="sub-select"></select>
-            <button id="chooseDstBtn" class="small">设为目标并加入列表</button>
+            <div class="btn-row-small">
+              <button id="chooseDstBtn" class="small">加入已选（目标）</button>
+            </div>
           </div>
         </div>
         <div class="hint">注：如果某映射没有出现在下拉，请在 docker-compose 中把宿主机目录以 volumes 映射到容器并重启容器。</div>
@@ -31,16 +35,17 @@
 
       <div class="panel card">
         <h3>已选择（源 / 目标）</h3>
-        <div class="pair-row">
-          <div>
+        <div id="selectedWrap" class="selected-wrap">
+          <div class="sel-col">
             <h4>来源 (Sources)</h4>
-            <ul id="srcList" class="list"></ul>
+            <div id="srcList" class="pills"></div>
           </div>
-          <div>
+          <div class="sel-col">
             <h4>目标 (Destinations)</h4>
-            <ul id="dstList" class="list"></ul>
+            <div id="dstList" class="pills"></div>
           </div>
         </div>
+
         <div class="controls">
           <label>配对方式：
             <select id="pairMode">
@@ -48,9 +53,15 @@
               <option value="single">单目标应用于所有来源</option>
             </select>
           </label>
+          <div class="pair-explain" id="pairExplain">
+            <strong>说明：</strong>
+            <div id="explainText">按索引配对：第1个源与第1个目标配对，第2个源与第2个目标依此类推。<br/>
+            单目标应用于所有来源：选择一个目标（第一个目标），它将被应用到所有选择的源目录，适合将多个源备份到同一个目标。</div>
+          </div>
+
           <div class="btn-row">
-            <button id="addPairs">添加任务</button>
-            <button id="clearSelected">清空</button>
+            <button id="addPairs" class="primary">添加任务（一键）</button>
+            <button id="clearSelected" class="danger">清空已选</button>
           </div>
         </div>
       </div>

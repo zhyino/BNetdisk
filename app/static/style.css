@@ -3,12 +3,13 @@
   --card:#ffffff;
   --accent:#2563eb;
   --muted:#6b7280;
+  --green:#10b981;
+  --danger:#ef4444;
 }
 *{box-sizing:border-box}
 body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial;background:var(--bg);color:#0f172a}
 .topbar{height:60px;background:linear-gradient(90deg,#0ea5e9,#6366f1);color:#fff;display:flex;align-items:center;padding:0 24px;font-weight:700;box-shadow:0 2px 8px rgba(2,6,23,0.08);font-size:18px}
 .container{display:flex;height:calc(100vh - 60px);gap:18px;padding:18px}
-/* left panel fixed width to prevent being pushed by logs */
 .left{flex:0 0 520px;display:flex;flex-direction:column;gap:14px}
 .right{flex:1;display:flex;flex-direction:column;gap:14px;min-width:360px}
 .panel.card{background:var(--card);border-radius:12px;padding:14px;box-shadow:0 6px 18px rgba(15,23,42,0.06);overflow:auto}
@@ -16,15 +17,19 @@ body{margin:0;font-family:Inter,Segoe UI,Roboto,Arial;background:var(--bg);color
 .quick-row{display:flex;gap:12px;align-items:flex-end}
 .quick-col{flex:1;display:flex;flex-direction:column;gap:8px}
 .root-select,.sub-select{padding:8px;border-radius:8px;border:1px solid rgba(2,6,23,0.06);background:#fff}
-.small{padding:8px;border-radius:8px;border:none;background:#10b981;color:#fff;cursor:pointer;font-weight:600}
+.small{padding:8px;border-radius:8px;border:none;background:var(--green);color:#fff;cursor:pointer;font-weight:600}
+.btn-row-small{margin-top:6px}
 .hint{color:var(--muted);font-size:12px;margin-top:8px}
-.pair-row{display:flex;gap:12px}
-.list{list-style:none;padding:0;margin:0;max-height:180px;overflow:auto;border:1px solid rgba(2,6,23,0.04);border-radius:8px;padding:6px;background:#fafafa}
-.list li{display:flex;justify-content:space-between;padding:6px 8px;border-bottom:1px solid rgba(2,6,23,0.03);font-size:13px}
-.controls{margin-top:10px;display:flex;flex-direction:column;gap:8px}
-.btn-row{display:flex;gap:8px}
-button#addPairs{padding:10px 14px;background:#2563eb;color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
-button#clearSelected{padding:10px 14px;background:#ef4444;color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
+.selected-wrap{display:flex;gap:12px}
+.sel-col{flex:1}
+.pills{display:flex;flex-direction:column;gap:8px}
+.pill{display:flex;justify-content:space-between;align-items:center;padding:8px;border-radius:10px;background:#f8fafc;border:1px solid rgba(2,6,23,0.04);font-size:13px}
+.pill .pname{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:380px}
+.pill .pactions button{background:#2563eb;color:#fff;border:none;padding:6px 8px;border-radius:8px;cursor:pointer}
+.pair-explain{font-size:13px;margin-top:8px;color:var(--muted)}
+.btn-row{display:flex;gap:8px;margin-top:10px}
+.primary{padding:10px 14px;background:var(--accent);color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
+.danger{padding:10px 14px;background:var(--danger);color:#fff;border-radius:10px;border:none;cursor:pointer;font-weight:600}
 #queue{list-style:none;padding:0;margin:0;max-height:160px;overflow:auto}
 #queue li{padding:8px;border-bottom:1px dashed rgba(2,6,23,0.04);font-size:13px}
 .log{background:#0b1220;color:#b7f6c5;padding:12px;border-radius:10px;height:100%;overflow:auto;font-family:monospace;font-size:13px}

@@ -52,7 +52,7 @@ class BackupWorker(threading.Thread):
     def broadcast(self, msg: str):
         ts = time.strftime('%Y-%m-%d %H:%M:%S')
         line = f"{ts} {msg}"
-        # print to console for container logs
+        # also print to stdout so docker logs capture it
         print(line, flush=True)
         for q in list(self._clients):
             try:
@@ -63,14 +63,18 @@ class BackupWorker(threading.Thread):
     def stop(self):
         self._stop_event.set()
 
-    def add_task(self, src: Path, dst: Path, filter_images: bool = True, filter_nfo: bool = True):
+    def add_task(self, src: Path, dst: Path, filter_images: bool = True, filter_nfo: bool = True, mirror: bool = True):
+        """mirror: when True, create a subdirectory in dst named like src.name and place placeholders under it.
+        The queued dict includes 'mirror' flag so run() knows how to compute the actual destination root.
+        """
         self.task_queue.put({
             'src': str(src),
             'dst': str(dst),
             'filter_images': bool(filter_images),
-            'filter_nfo': bool(filter_nfo)
+            'filter_nfo': bool(filter_nfo),
+            'mirror': bool(mirror)
         })
-        self.broadcast(f"[QUEUE] Added task: {src} -> {dst}")
+        self.broadcast(f"[QUEUE] Added task: {src} -> {dst} (mirror={mirror})")
 
     def _is_allowed_path(self, p: Path) -> bool:
         try:
@@ -129,9 +133,11 @@ class BackupWorker(threading.Thread):
             dst = Path(task.get('dst'))
             filter_images = task.get('filter_images', True)
             filter_nfo = task.get('filter_nfo', True)
+            mirror = task.get('mirror', True)
 
-            self.broadcast(f"[START] {src} -> {dst} (filter_images={filter_images}, filter_nfo={filter_nfo})")
+            self.broadcast(f"[START] {src} -> {dst} (filter_images={filter_images}, filter_nfo={filter_nfo}, mirror={mirror})")
 
+            # validate
             if not self._is_allowed_path(src):
                 self.broadcast(f"[WARN] Source not allowed: {src}")
                 self.task_queue.task_done()
@@ -152,8 +158,31 @@ class BackupWorker(threading.Thread):
                 self.task_queue.task_done()
                 continue
 
-            if str(src.resolve()) == str(dst.resolve()):
-                self.broadcast(f"[WARN] Source and destination are the same, skipping: {src}")
+            # compute destination root: if mirror and dst's basename != src.basename => dst/srcname
+            try:
+                src_name = src.resolve().name
+            except Exception:
+                src_name = src.name
+
+            try:
+                dst_name = dst.resolve().name
+            except Exception:
+                dst_name = dst.name
+
+            if mirror and dst_name != src_name:
+                dest_root = dst / src_name
+            else:
+                dest_root = dst
+
+            # safety: avoid writing into source (dest_root inside src)
+            try:
+                if dest_root.resolve() == src.resolve() or dest_root.resolve().is_relative_to(src.resolve()):
+                    self.broadcast(f"[WARN] Computed destination would be same as or inside source, skipping: {dest_root}")
+                    self.task_queue.task_done()
+                    continue
+            except Exception:
+                # best-effort; if resolve fails, skip to be safe
+                self.broadcast(f"[WARN] Could not resolve paths safely for {src} -> {dest_root}, skipping")
                 self.task_queue.task_done()
                 continue
 
@@ -174,7 +203,7 @@ class BackupWorker(threading.Thread):
                             if src_key in self._backed_up:
                                 skipped += 1
                                 continue
-                        target_dir = dst / rel
+                        target_dir = dest_root / rel
                         target_file = target_dir / fname
                         ok = self._create_placeholder(target_file)
                         if ok:
@@ -190,5 +219,5 @@ class BackupWorker(threading.Thread):
             with self._lock:
                 self._save_backed_up()
 
-            self.broadcast(f"[DONE] {src} -> {dst} (backed={backed}, skipped={skipped})")
+            self.broadcast(f"[DONE] {src} -> {dest_root} (backed={backed}, skipped={skipped})")
             self.task_queue.task_done()

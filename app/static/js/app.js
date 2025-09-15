@@ -66,6 +66,7 @@ async function onRootChange(rootSelect, subSelect) {
 srcRootSelect.onchange = () => onRootChange(srcRootSelect, srcSubSelect);
 dstRootSelect.onchange = () => onRootChange(dstRootSelect, dstSubSelect);
 
+// Add to selected lists. keep lists unique for UI clarity
 chooseSrcBtn.onclick = () => {
   const v = srcSubSelect.value || srcRootSelect.value;
   if (v && !srcs.includes(v)) srcs.push(v);
@@ -78,27 +79,25 @@ chooseDstBtn.onclick = () => {
 };
 
 function renderLists() {
+  // render pills/cards for selected items with clear buttons
   srcListEl.innerHTML = '';
   srcs.forEach((s, i) => {
-    const li = document.createElement('li');
-    li.innerText = s;
-    const rem = document.createElement('button');
-    rem.innerText = '移除';
-    rem.onclick = () => { srcs.splice(i,1); renderLists(); };
-    li.appendChild(rem);
-    srcListEl.appendChild(li);
+    const pill = document.createElement('div');
+    pill.className = 'pill';
+    pill.innerHTML = `<div class="pname">${s}</div><div class="pactions"><button class="small" onclick="removeSrc(${i})">移除</button></div>`;
+    srcListEl.appendChild(pill);
   });
   dstListEl.innerHTML = '';
   dsts.forEach((d, i) => {
-    const li = document.createElement('li');
-    li.innerText = d;
-    const rem = document.createElement('button');
-    rem.innerText = '移除';
-    rem.onclick = () => { dsts.splice(i,1); renderLists(); };
-    li.appendChild(rem);
-    dstListEl.appendChild(li);
+    const pill = document.createElement('div');
+    pill.className = 'pill';
+    pill.innerHTML = `<div class="pname">${d}</div><div class="pactions"><button class="small" onclick="removeDst(${i})">移除</button></div>`;
+    dstListEl.appendChild(pill);
   });
 }
+
+window.removeSrc = (i) => { srcs.splice(i,1); renderLists(); };
+window.removeDst = (i) => { dsts.splice(i,1); renderLists(); };
 
 addPairsBtn.onclick = async () => {
   const mode = pairModeEl.value;
@@ -108,22 +107,25 @@ addPairsBtn.onclick = async () => {
     if (n === 0) { alert('至少需要一对源和目标'); return; }
     for (let i=0;i<n;i++) {
       if (srcs[i] === dsts[i]) {
-        alert('源和目标相同，已跳过相同项: ' + srcs[i]);
+        // client-side warn and skip identical pairs
+        alert('警告：源和目标相同，已跳过: ' + srcs[i]);
         continue;
       }
       tasks.push({src: srcs[i], dst: dsts[i]});
     }
   } else {
     if (dsts.length === 0) { alert('请先选择一个目标'); return; }
+    const target = dsts[0];
     for (let i=0;i<srcs.length;i++) {
-      if (srcs[i] === dsts[0]) {
+      if (srcs[i] === target) {
+        // skip identical
         continue;
       }
-      tasks.push({src: srcs[i], dst: dsts[0]});
+      tasks.push({src: srcs[i], dst: target});
     }
   }
 
-  if (tasks.length === 0) { alert('没有可添加的任务（可能因为源与目标相同）'); return; }
+  if (tasks.length === 0) { alert('没有可添加的任务（可能因为源与目标相同或未选择）'); return; }
 
   const res = await fetch('/api/add', {
     method: 'POST', headers: {'Content-Type':'application/json'},
@@ -131,7 +133,8 @@ addPairsBtn.onclick = async () => {
   });
   const j = await res.json();
   if (res.ok) {
-    if (pairModeEl.value === 'index') {
+    // UX: clear used sources in 'single' mode, in index mode remove matched pairs
+    if (mode === 'index') {
       const n = Math.min(srcs.length, dsts.length);
       srcs = srcs.slice(n);
       dsts = dsts.slice(n);
@@ -141,7 +144,7 @@ addPairsBtn.onclick = async () => {
     renderLists();
     loadQueue();
     if (j.skipped && j.skipped.length) {
-      alert('部分任务被服务器跳过，原因见日志');
+      alert('部分任务在服务器端被跳过，原因见日志或返回信息');
     }
   } else {
     alert('添加失败: ' + JSON.stringify(j));
