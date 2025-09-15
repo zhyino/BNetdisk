@@ -70,7 +70,6 @@ async function loadEntries(path, which) {
     const entries = j.entries || [];
     container.innerHTML = '';
     breadcrumb.innerHTML = '';
-    // root display
     const rootBtn = document.createElement('button');
     rootBtn.className = 'crumb';
     rootBtn.innerText = path;
@@ -118,7 +117,7 @@ dstUpBtn.onclick = async () => {
 
 chooseSrcBtn.onclick = () => {
   const v = currentSrcPath;
-  if (v) srcs.push(v); // allow duplicates if user wants
+  if (v) srcs.push(v);
   renderLists();
 };
 chooseDstBtn.onclick = () => {
