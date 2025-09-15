@@ -1,3 +1,4 @@
+\
 import os
 from pathlib import Path
 import queue
@@ -130,6 +131,7 @@ def api_add():
     added = 0
     skipped = []
     for t in tasks:
+        # Expect fields: src, src_root, dst, dst_root, mode
         try:
             src = Path(t.get('src', '')).resolve()
             dst = Path(t.get('dst', '')).resolve()
@@ -138,28 +140,22 @@ def api_add():
             continue
 
         mode = t.get('mode', 'incremental')
-        try:
-            src_name = src.name
-        except Exception:
-            src_name = Path(t.get('src', '')).name
 
-        mirror = True
+        # Compute destination base to mirror source absolute path under dst.
         try:
-            if dst.name == src_name:
-                mirror = False
+            rel_from_root = src.relative_to(src.anchor)
+            dest_final = dst / rel_from_root  # e.g. src=/Video/国产剧 -> rel_from_root=Video/国产剧 -> dest_final = dst/Video/国产剧
         except Exception:
-            mirror = True
-
-        potential_dst_root = dst / src_name if mirror else dst
+            dest_final = dst / src.name
 
         try:
             if str(src) == str(dst):
                 skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'src and dst identical'})
                 worker.broadcast(f"[WARN] Skipping task because src and dst are identical: {src}")
                 continue
-            if potential_dst_root.resolve() == src.resolve() or potential_dst_root.resolve().is_relative_to(src.resolve()):
+            if dest_final.resolve() == src.resolve() or dest_final.resolve().is_relative_to(src.resolve()):
                 skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'destination would be inside source or identical'})
-                worker.broadcast(f"[WARN] Skipping task because destination would be inside or equal to source: {potential_dst_root}")
+                worker.broadcast(f"[WARN] Skipping task because destination would be inside or equal to source: {dest_final}")
                 continue
         except Exception:
             skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': 'path resolution error'})
@@ -177,13 +173,14 @@ def api_add():
             continue
 
         try:
-            dst.mkdir(parents=True, exist_ok=True)
+            dest_final.mkdir(parents=True, exist_ok=True)
         except Exception as e:
             skipped.append({'task': {'src': str(src), 'dst': str(dst)}, 'reason': f'cannot create dst: {e}'})
-            worker.broadcast(f"[WARN] Cannot create dst {dst}: {e}")
+            worker.broadcast(f"[WARN] Cannot create dst {dest_final}: {e}")
             continue
 
-        worker.add_task(src, dst, filter_images=filter_images, filter_nfo=filter_nfo, mirror=mirror, mode=mode)
+        # dest_final already mirrors the desired structure; instruct worker NOT to add extra src name
+        worker.add_task(src, dest_final, filter_images=filter_images, filter_nfo=filter_nfo, mirror=False, mode=mode)
         added += 1
 
     return jsonify({'added': added, 'skipped': skipped})
@@ -203,7 +200,7 @@ def stream():
         try:
             while True:
                 msg = q.get()
-                yield f"data: {msg}\n\n"
+                yield f"data: {msg}\\n\\n"
         finally:
             try:
                 worker.unregister_client(q)

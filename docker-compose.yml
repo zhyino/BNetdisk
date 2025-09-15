@@ -9,10 +9,12 @@ services:
     ports:
       - "18008:18008"
     volumes:
-      - ./data:/app/data:rw
-      # 在下面添加你需要映射的宿主机目录（示例）：
+      - ./data:/app/data:rw # 容器用于存放 backup_log.txt 与其他数据的持久化目录（容器会创建）
+      # 要让 Web 页面能浏览并选择宿主机上的目录，必须在下面把宿主机目录映射到容器中。
+      # 示例：将宿主机 /vol2/1000/Video/115 映射到容器内 /115
       # - /vol2/1000/Video/115:/115:rw
       # - /vol2/1000/Video/Video:/Video:rw
+      # 注意：不要映射敏感系统目录，确保容器用户对映射目录有读写权限。
     environment:
       - BACKUP_DIR=/app/data
       - BACKUP_RATE=20

@@ -1,3 +1,4 @@
+\
 from pathlib import Path
 import os
 import threading
@@ -141,7 +142,7 @@ class BackupWorker(threading.Thread):
         tmp = dest_file.parent.joinpath(dest_file.name + '.tmp')
         try:
             with tmp.open('wb') as f:
-                f.write(b'\0' * 1024)
+                f.write(b'\\0' * 1024)
             os.replace(str(tmp), str(dest_file))
             return True
         except Exception as e:

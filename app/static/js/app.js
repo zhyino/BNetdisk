@@ -1,4 +1,3 @@
-/* app.js */
 const srcRootSelect = document.getElementById('srcRootSelect');
 const dstRootSelect = document.getElementById('dstRootSelect');
 const srcEntries = document.getElementById('srcEntries');
@@ -18,8 +17,8 @@ const clearBtn = document.getElementById('clearSelected');
 const queueEl = document.getElementById('queue');
 const logEl = document.getElementById('log');
 
-let srcs = [];
-let dsts = [];
+let srcs = []; // {path, root}
+let dsts = []; // {path, root}
 
 let currentSrcPath = null;
 let currentDstPath = null;
@@ -155,12 +154,14 @@ dstUpBtn.onclick = async () => {
 
 chooseSrcBtn.onclick = () => {
   const v = currentSrcPath;
-  if (v) srcs.push(v);
+  const root = srcRootSelect.value || '/';
+  if (v) srcs.push({path: v, root: root});
   renderLists();
 };
 chooseDstBtn.onclick = () => {
   const v = currentDstPath;
-  if (v) dsts.push(v);
+  const root = dstRootSelect.value || '/';
+  if (v) dsts.push({path: v, root: root});
   renderLists();
 };
 
@@ -169,14 +170,16 @@ function renderLists() {
   srcs.forEach((s, i) => {
     const pill = document.createElement('div');
     pill.className = 'pill';
-    pill.innerHTML = `<div class="pname">${i+1}. ${s}</div><div class="pactions"><button class="small" onclick="removeSrc(${i})">移除</button></div>`;
+    const disp = s.path + '  (' + s.root + ')';
+    pill.innerHTML = `<div class="pname">${i+1}. ${disp}</div><div class="pactions"><button class="small" onclick="removeSrc(${i})">移除</button></div>`;
     srcListEl.appendChild(pill);
   });
   dstListEl.innerHTML = '';
   dsts.forEach((d, i) => {
     const pill = document.createElement('div');
     pill.className = 'pill';
-    pill.innerHTML = `<div class="pname">${i+1}. ${d}</div><div class="pactions"><button class="small" onclick="removeDst(${i})">移除</button></div>`;
+    const disp = d.path + '  (' + d.root + ')';
+    pill.innerHTML = `<div class="pname">${i+1}. ${disp}</div><div class="pactions"><button class="small" onclick="removeDst(${i})">移除</button></div>`;
     dstListEl.appendChild(pill);
   });
 }
@@ -190,11 +193,14 @@ addPairsBtn.onclick = async () => {
   const mode = document.querySelector('input[name="mode"]:checked').value || 'incremental';
   let tasks = [];
   for (let i=0;i<n;i++) {
-    if (srcs[i] === dsts[i]) {
-      alert('警告：源和目标相同，已跳过: ' + srcs[i]);
+    const s = srcs[i];
+    const d = dsts[i];
+    if (!s || !d) continue;
+    if (s.path === d.path) {
+      alert('警告：源和目标相同，已跳过: ' + s.path);
       continue;
     }
-    tasks.push({src: srcs[i], dst: dsts[i], mode: mode});
+    tasks.push({src: s.path, src_root: s.root, dst: d.path, dst_root: d.root, mode: mode});
   }
   if (tasks.length === 0) { alert('没有可添加的任务（可能因为源与目标相同）'); return; }
   try {
