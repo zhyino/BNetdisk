@@ -189,9 +189,9 @@ def api_queue():
             items.append(item)
     return jsonify({'queue': items})
 
-def tail_file_lines(path: Path, lines: int = 200):
-    if lines > 200:
-        lines = 200
+def tail_file_lines(path: Path, lines: int = 100):
+    if lines > 100:
+        lines = 100
     if not path.exists():
         return []
     try:
@@ -214,9 +214,9 @@ def tail_file_lines(path: Path, lines: int = 200):
 
 @app.route('/api/logs')
 def api_logs():
-    n = int(request.args.get('n', '200'))
-    if n > 200:
-        n = 200
+    n = int(request.args.get('n', '100'))
+    if n > 100:
+        n = 100
     lines = tail_file_lines(SERVICE_LOG, n)
     return jsonify({'lines': lines})
 

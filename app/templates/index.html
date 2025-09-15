@@ -80,7 +80,7 @@
             <button id="addPairs" class="primary">添加任务</button>
             <button id="clearSelected" class="danger">清空已选</button>
           </div>
-          <div class="card-note small" style="margin-top:12px;">说明：按索引配对（第1源→第1目标，第2源→第2目标）。备份模式：增量（仅处理新增的，使用 backup_log.txt）或 全量（忽略 backup_log.txt，全部重新生成并覆盖占位文件）。</div>
+          <div class="card-note small" style="margin-top:12px;">说明：按索引配对（第1源→第1目标，第2源→第2目标）。备份模式：增量（仅处理新增的，使用 sqlite 索引/backup_log.txt）或 全量（忽略索引，全部重新生成并覆盖占位文件）。</div>
         </div>
       </div>
 
@@ -95,7 +95,7 @@
       <div class="panel card">
         <h3>运行日志</h3>
         <pre id="log" class="log"></pre>
-        <div class="card-note small">日志由服务端实时推送，记录成功、警告与错误。若 SSE 失败会回退为轮询显示最近日志（最多 200 条）。</div>
+        <div class="card-note small">日志仅显示最近 100 条。</div>
       </div>
     </div>
   </div>

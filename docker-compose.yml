@@ -13,14 +13,11 @@ services:
       # 要让 Web 页面能浏览并选择宿主机上的目录，必须在下面把宿主机目录映射到容器中（示例）：
       # - /vol2/1000/Video/115:/115:rw
       # - /vol2/1000/Video/Video:/Video:rw
-      # 注意：不要映射敏感系统目录，确保容器用户对映射目录有读写权限。
     environment:
       - BACKUP_DIR=/app/data
       - BACKUP_RATE=20
       - APP_PORT=18008
-      # 若希望容器在运行时把 /app/data 的属主更改为宿主 UID/GID，请设置下方（可选）
+      # 可选：将容器创建的数据文件属主改为宿主用户（仅当容器以 root 运行时有效）
       # - UID=1000
       # - GID=1001
     restart: unless-stopped
-    # 若需要容器进程以特定 UID:GID 运行，请使用下面的 user 字段（示例）
-    # user: "1000:1001"

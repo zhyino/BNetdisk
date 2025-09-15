@@ -1,5 +1,4 @@
-\
-/* front-end JS (polling-only for logs, keeps only latest 200 logs shown) */
+/* front-end JS (keeps only latest 100 logs shown) */
 const srcRootSelect = document.getElementById('srcRootSelect');
 const dstRootSelect = document.getElementById('dstRootSelect');
 const srcEntries = document.getElementById('srcEntries');
@@ -30,6 +29,7 @@ let loadingSrc = false;
 let loadingDst = false;
 
 const DEFAULT_FETCH_TIMEOUT = 8000;
+let es = null;
 let pollInterval = null;
 
 function fetchWithTimeout(url, opts = {}, timeout = DEFAULT_FETCH_TIMEOUT) {
@@ -262,14 +262,47 @@ async function loadQueue() {
   }
 }
 
-// polling-only log handling
+function initLogStream() {
+  if (!!window.EventSource) {
+    try {
+      es = new EventSource('/stream');
+      let firstMsg = true;
+      const start = Date.now();
+      es.onmessage = (e) => {
+        // keep only last 100 lines in DOM to avoid memory blowup
+        const lines = (logEl.textContent || '').split('\n').filter(Boolean);
+        lines.push(e.data);
+        const tail = lines.slice(-100);
+        logEl.textContent = tail.join('\n') + '\n';
+        logEl.scrollTop = logEl.scrollHeight;
+        firstMsg = false;
+      };
+      es.onerror = (e) => {
+        console.warn('EventSource error', e);
+        if (Date.now() - start > 5000) {
+          startPollingLogs();
+        }
+        if (es) {
+          try { es.close(); } catch (e) {}
+          es = null;
+        }
+      };
+    } catch (err) {
+      console.warn('EventSource init failed', err);
+      startPollingLogs();
+    }
+  } else {
+    startPollingLogs();
+  }
+}
+
 async function fetchLogsOnce() {
   try {
-    const res = await fetch('/api/logs?n=200');
+    const res = await fetch('/api/logs?n=100');
     if (!res.ok) return;
     const j = await res.json();
     const lines = j.lines || [];
-    logEl.textContent = lines.join('\\n') + (lines.length ? '\\n' : '');
+    logEl.textContent = lines.join('\n') + (lines.length ? '\n' : '');
     logEl.scrollTop = logEl.scrollHeight;
   } catch (err) {
     console.warn('fetchLogsOnce error', err);
@@ -288,7 +321,7 @@ refreshRootsBtn.onclick = async () => {
 
 window.onload = () => {
   loadRootsToSelects();
-  startPollingLogs();
+  initLogStream();
   loadQueue();
   setInterval(loadQueue, 5000); // keep queue updated
 };

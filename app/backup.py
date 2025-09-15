@@ -1,84 +1,3 @@
-
-def discover_mount_points():
-    """更稳健地发现容器中的挂载点。
-    仅返回存在且为目录的挂载点，优先使用 /proc/self/mountinfo，然后回退到 /proc/mounts，
-    最后检查常见根路径下的子目录并利用 st_dev 判断是否为单独设备挂载点。
-    返回 Path 对象列表（排序、去重）。
-    """
-    mounts = set()
-    try:
-        with open('/proc/self/mountinfo', 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
-                parts = line.split()
-                if len(parts) >= 5:
-                    mp = parts[4].replace('\040', ' ')
-                    if mp and mp.startswith('/'):
-                        try:
-                            if os.path.exists(mp) and os.path.isdir(mp):
-                                mounts.add(mp)
-                        except Exception:
-                            # 如果无法 stat，跳过该项
-                            continue
-    except Exception:
-        try:
-            with open('/proc/mounts', 'r', encoding='utf-8', errors='ignore') as f:
-                for line in f:
-                    parts = line.split()
-                    if len(parts) >= 2:
-                        mp = parts[1].replace('\040', ' ')
-                        if mp and mp.startswith('/'):
-                            try:
-                                if os.path.exists(mp) and os.path.isdir(mp):
-                                    mounts.add(mp)
-                            except Exception:
-                                continue
-        except Exception:
-            pass
-
-    # 额外策略：检查常见根路径下的子目录（仅目录），通过 st_dev 判断是否跨设备
-    candidates = ['/', '/mnt', '/media', '/data', '/srv', '/app']
-    for base in candidates:
-        try:
-            if not os.path.exists(base):
-                continue
-            try:
-                base_dev = os.stat(base).st_dev
-            except Exception:
-                base_dev = None
-            for name in os.listdir(base):
-                full = os.path.join(base, name)
-                try:
-                    if not os.path.exists(full):
-                        continue
-                    if not os.path.isdir(full):
-                        continue
-                    if base_dev is not None:
-                        try:
-                            if os.stat(full).st_dev != base_dev:
-                                mounts.add(full)
-                        except Exception:
-                            mounts.add(full)
-                    else:
-                        mounts.add(full)
-                except Exception:
-                    continue
-        except Exception:
-            continue
-
-    filtered = []
-    for m in sorted(mounts):
-        try:
-            if not m or not m.startswith('/'):
-                continue
-            # 排除常见虚拟或系统路径
-            if m in ('/proc', '/sys', '/dev', '/run'):
-                continue
-            filtered.append(Path(m))
-        except Exception:
-            continue
-    return filtered
-
-
 from pathlib import Path
 import os, threading, queue, time, sqlite3, io
 from collections import deque
@@ -158,7 +77,7 @@ class ServiceLogWriter(threading.Thread):
             # drop if queue full
             pass
 
-    def tail_lines(self, n=200):
+    def tail_lines(self, n=100):
         return list(self.deque)[-n:]
 
 class BackupIndex:
@@ -256,8 +175,8 @@ class BackupWorker(threading.Thread):
             self._clients.append(q)
         try:
             q.put_nowait(f"[INFO] connected")
-            # send recent lines
-            for l in self.service_writer.tail_lines(200):
+            # send recent lines (limited to 100 to avoid client overload)
+            for l in self.service_writer.tail_lines(100):
                 try:
                     q.put_nowait(l)
                 except queue.Full:
