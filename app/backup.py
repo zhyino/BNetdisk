@@ -1,69 +1,83 @@
+
 def discover_mount_points():
-    """更健壮地发现容器（或系统）上的挂载点。
-    优先尝试 /proc/self/mountinfo，然后回退到 /proc/mounts，最后通过比较设备号检测根目录下的挂载点。
-    返回 Path 对象列表（已排序、去重）。"""
+    """更稳健地发现容器中的挂载点。
+    仅返回存在且为目录的挂载点，优先使用 /proc/self/mountinfo，然后回退到 /proc/mounts，
+    最后检查常见根路径下的子目录并利用 st_dev 判断是否为单独设备挂载点。
+    返回 Path 对象列表（排序、去重）。
+    """
     mounts = set()
     try:
-        # 尝试读取更详尽的 mountinfo（包含真实 mount point 字段）
         with open('/proc/self/mountinfo', 'r', encoding='utf-8', errors='ignore') as f:
             for line in f:
                 parts = line.split()
                 if len(parts) >= 5:
-                    mp = parts[4]
-                    mp = mp.replace('\040', ' ')
+                    mp = parts[4].replace('\040', ' ')
                     if mp and mp.startswith('/'):
-                        mounts.add(mp)
+                        try:
+                            if os.path.exists(mp) and os.path.isdir(mp):
+                                mounts.add(mp)
+                        except Exception:
+                            # 如果无法 stat，跳过该项
+                            continue
     except Exception:
         try:
-            # 回退到 /proc/mounts
             with open('/proc/mounts', 'r', encoding='utf-8', errors='ignore') as f:
                 for line in f:
                     parts = line.split()
                     if len(parts) >= 2:
                         mp = parts[1].replace('\040', ' ')
                         if mp and mp.startswith('/'):
-                            mounts.add(mp)
+                            try:
+                                if os.path.exists(mp) and os.path.isdir(mp):
+                                    mounts.add(mp)
+                            except Exception:
+                                continue
         except Exception:
             pass
 
-    # 额外策略：检查常见的根路径（/, /mnt, /media, /data, /srv, /app）下的子目录是否为独立设备（st_dev 不同）
+    # 额外策略：检查常见根路径下的子目录（仅目录），通过 st_dev 判断是否跨设备
     candidates = ['/', '/mnt', '/media', '/data', '/srv', '/app']
     for base in candidates:
         try:
             if not os.path.exists(base):
                 continue
-            base_dev = os.stat(base).st_dev
+            try:
+                base_dev = os.stat(base).st_dev
+            except Exception:
+                base_dev = None
             for name in os.listdir(base):
                 full = os.path.join(base, name)
                 try:
                     if not os.path.exists(full):
                         continue
-                    # 仅关心目录或挂载点
-                    if os.path.isdir(full):
+                    if not os.path.isdir(full):
+                        continue
+                    if base_dev is not None:
                         try:
                             if os.stat(full).st_dev != base_dev:
                                 mounts.add(full)
                         except Exception:
-                            # 如果不能 stat，还是加入（可能是虚拟挂载）
                             mounts.add(full)
+                    else:
+                        mounts.add(full)
                 except Exception:
                     continue
         except Exception:
             continue
 
-    # 过滤与清理
     filtered = []
     for m in sorted(mounts):
         try:
             if not m or not m.startswith('/'):
                 continue
-            # 排除虚拟或系统层面的挂载点
+            # 排除常见虚拟或系统路径
             if m in ('/proc', '/sys', '/dev', '/run'):
                 continue
             filtered.append(Path(m))
         except Exception:
             continue
     return filtered
+
 
 from pathlib import Path
 import os, threading, queue, time, sqlite3, io
