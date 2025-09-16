@@ -1,113 +1,135 @@
-# BNetdisk 假文件生成工具
+# 假文件入库管理面板
+
+> 本项目基于并修改自 [cnlaok/BNetdisk.py](https://github.com/cnlaok/BNetdisk.py)，提供一个 Web 面板来批量生成“假文件”，用于 Plex 等媒体服务器的快速入库。
+
+---
 
 ## 项目简介
 
-BNetdisk是一个用于生成大规模占位文件的工具，旨在模拟真实备份环境进行系统测试和性能评估。通过生成指定结构的假文件，用户可以测试备份系统在处理数百万级文件时的表现，而无需占用大量存储空间。
+在使用网盘 / 远程存储时，直接让 Plex 扫描真实文件会造成大量带宽和 IO 占用。  
+本项目通过生成与真实媒体同名的 **假占位文件**，让 Plex 能够在短时间内完成媒体库的扫描和入库。  
+完成入库后，再将真实媒体目录映射到 Plex 容器内 **相同的路径**，即可正常播放。
 
-该工具采用Web界面实时展示生成进度，支持任务队列管理和自动日志轮转，适合系统管理员、开发人员和测试工程师使用。
+✅ **优点**  
+- 快速完成 Plex 入库（无需立即传输真实文件）。  
+- 降低短时间带宽与存储 IO 压力。  
 
-## 功能特点
+⚠️ **缺点**  
+- 入库阶段 Plex 无法播放文件（因为是假文件）。  
+- 必须在入库完成后，把真实文件映射到与假文件一致的容器路径。  
 
-- 生成指定结构的占位文件（1KB大小）
-- 支持过滤图片文件和.nfo文件
-- 实时日志显示（仅保留最新200行）
-- 任务队列管理和监控
-- 自动日志轮转，防止磁盘空间耗尽
-- 支持增量备份模式
-- 容器化部署，跨平台兼容
-- 可处理数百万级文件生成任务
+---
 
-## 技术栈
+## 使用步骤（Plex 配置重点）
 
-- 后端：Python 3.9+, Flask, Gunicorn
-- 前端：HTML, JavaScript, CSS
-- 部署：Docker, Docker Compose
+1. **第一阶段：假文件入库**  
+   - 使用本工具生成假文件，并将目标目录映射到 Plex 容器。  
+   - Plex 会扫描并入库这些假文件。  
 
-## 安装与部署
+2. **第二阶段：切换真实文件**  
+   - 入库完成后，将 Plex 容器中的映射切换为真实媒体文件目录。  
+   - 注意：**映射路径必须和假文件路径一致**，否则 Plex 无法识别为同一条目。  
 
-### 前提条件
+### 示例
 
-- Docker 19.03+
-- Docker Compose 1.27+
+假设要把真实文件 `/vol2/1000/Video/电影/` 入库到 Plex：
 
-### 快速部署
+- **假文件生成阶段**  
+  在 `docker-compose.yml` 中挂载：  
+  ```yaml
+  - /vol2/1000/Video/115:/115
+  ```
+  工具会在 `/115/Video/电影/...` 下生成假文件。  
+  Plex 挂载：
+  ```yaml
+  - /vol2/1000/Video/115:/115
+  ```
 
-1. 克隆仓库
-git clone https://github.com/zhyino/BNetdisk.git
+- **真实文件切换阶段**  
+  入库完成后，把 Plex 的挂载切换到真实路径：  
+  ```yaml
+  - /vol2/1000/Video/115:/115
+  ```
+  （路径保持不变，内容换成真实文件）  
+
+这样 Plex 能够无缝识别条目并正常播放。
+
+---
+
+## 功能特性
+
+- Web 面板操作（中文界面）：
+  - 浏览容器映射的目录，选择源目录与目标目录。
+  - 支持多条目录 **按索引配对** 添加任务。
+  - 提供 **增量备份**（仅生成新增文件）和 **全量备份**（全部覆盖生成）。
+- 占位文件生成：
+  - 默认大小 1 KB（可修改为 0 字节）。  
+  - 原子写入，避免并发覆盖。  
+- 文件过滤：
+  - 自动跳过常见图片格式（jpg/png/webp 等）。  
+  - 自动跳过 `.nfo` 文件。  
+- 日志管理：
+  - 后端实时推送日志，前端仅显示最新 100 条，避免浏览器卡顿。  
+- IO 控制：
+  - 通过 `BACKUP_RATE` 环境变量限制每秒生成文件数量，降低远程挂载压力。  
+
+---
+
+## 快速开始
+
+### 1. 拉取仓库并构建
+```bash
+git clone https://github.com/yourname/BNetdisk.git
 cd BNetdisk
-2. 启动服务
-docker-compose up -d
-3. 访问Web界面
+docker compose up -d --build
+```
 
-打开浏览器，访问 `http://localhost:18008`
+### 2. 修改 `docker-compose.yml`
+在 `volumes` 中添加你希望在 Web 页面中浏览/操作的宿主目录，例如：
+```yaml
+services:
+  backup-web:
+    build: .
+    image: your-registry/bnetdisk:latest
+    ports:
+      - "18008:18008"
+    volumes:
+      - ./data:/app/data:rw
+      - /vol2/1000/Video/115:/115:rw
+      - /vol2/1000/Video/Video:/Video:rw
+    environment:
+      - BACKUP_RATE=20
+      - APP_PORT=18008
+    restart: unless-stopped
+```
 
-## 使用方法
+### 3. 访问 Web 面板
+浏览器打开：  
+```
+http://<服务器IP>:18008/
+```
 
-### 基本操作
+在左侧选择源目录、目标目录，点击“添加任务”即可生成假文件。
 
-服务启动后，Web界面会显示实时日志和系统状态。通过API可以添加文件生成任务。
+---
 
-### 添加任务API
+## 环境变量
 
-发送POST请求到 `/api/add` 端点：
-curl -X POST http://localhost:18008/api/add \
-  -H "Content-Type: application/json" \
-  -d '{
-    "tasks": [
-      {
-        "src": "/path/to/source",
-        "dst": "/path/to/destination",
-        "mode": "incremental",
-        "filter_images": true,
-        "filter_nfo": true,
-        "mirror": false
-      }
-    ]
-  }'
-参数说明：
-- `src`: 源目录路径（需要存在的目录）
-- `dst`: 目标目录路径（生成文件的位置）
-- `mode`: 备份模式，`incremental`（增量）或`full`（全量）
-- `filter_images`: 是否过滤图片文件（默认true）
-- `filter_nfo`: 是否过滤.nfo文件（默认true）
-- `mirror`: 是否镜像源目录结构（默认false）
+- `APP_PORT`：Web 服务端口（默认 `18008`）  
+- `BACKUP_RATE`：速率限制（每秒生成文件数，默认 `20`）  
+- `UID` / `GID`：容器内运行用户（可选，避免 root 权限）  
 
-### 查看任务队列
-curl http://localhost:18008/api/queue
-### 获取日志
-curl http://localhost:18008/api/logs?n=200
-## 配置选项
+---
 
-通过修改`docker-compose.yml`中的环境变量进行配置：
-
-- `BACKUP_DIR`: 数据存储目录（默认`/app/data`）
-- `BACKUP_RATE`: 处理速率（默认50）
-- `APP_PORT`: 应用端口（默认18008）
-- `GUNICORN_WORKERS`: Gunicorn工作进程数（默认2）
-- `GUNICORN_THREADS`: 每个工作进程的线程数（默认4）
-
-## 性能优化
-
-对于需要生成数百万级文件的场景：
-
-1. 适当提高`BACKUP_RATE`值（建议50-100）
-2. 增加Docker资源限制：deploy:
-  resources:
-    limits:
-      cpus: '2.0'
-      memory: 2G3. 确保目标磁盘有足够的空间和IO性能
-
-## 停止与更新
-# 停止服务
-docker-compose down
-
-# 更新服务
-git pull
-docker-compose pull
-docker-compose up -d
 ## 注意事项
 
-- 确保源目录和目标目录有正确的权限
-- 大规模文件生成可能需要较长时间，请耐心等待
-- 日志文件自动轮转，单个文件最大500KB，保留5个备份
-- 前端仅显示最新200行日志，减少浏览器资源占用
+- 真实媒体路径与假文件路径必须在 Plex 容器中一致。  
+- 建议逐步调整 `BACKUP_RATE`，避免对远程挂载产生过大 IO 压力。  
+- 假文件仅用于入库，入库完成后请务必替换为真实媒体文件。  
+
+---
+
+## 致谢
+
+- 原始项目：[cnlaok/BNetdisk.py](https://github.com/cnlaok/BNetdisk.py)  
+- 本项目在其基础上增加了 Web 面板、日志优化、过滤规则和容器化部署支持。
