@@ -78,14 +78,7 @@
 
 ## 快速开始
 
-### 1. 拉取仓库并构建
-```bash
-git clone https://github.com/yourname/BNetdisk.git
-cd BNetdisk
-docker compose up -d --build
-```
-
-### 2. 修改 `docker-compose.yml`
+### 1. 修改 `docker-compose.yml`
 在 `volumes` 中添加你希望在 Web 页面中浏览/操作的宿主目录，例如：
 ```yaml
 services:
@@ -115,7 +108,7 @@ services:
     # user: "1000:1001"
 ```
 
-### 3. 访问 Web 面板
+### 2. 访问 Web 面板
 浏览器打开：  
 ```
 http://<服务器IP>:18008/
