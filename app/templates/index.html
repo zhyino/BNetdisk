@@ -13,13 +13,9 @@
       <div class="panel card">
         <div class="notice-row">
           <h3 style="margin:0">目录浏览与选择</h3>
-          <div>
-            <button id="refreshRoots" class="tiny">刷新挂载点</button>
-          </div>
+          <div><button id="refreshRoots" class="tiny">刷新挂载点</button></div>
         </div>
-
-        <div class="card-note fixed" id="mainNote">在下方选择挂载点（左侧选择源，右侧选择目标），导航进入子目录，选择任意深度的目录后点击“加入已选”。<br><small style="color:var(--note-text)">可多选；选择后会出现在“已选择（源）”。目标可重复添加（例如将多个源按索引配对到相同目标）。</small></div>
-
+        <div class="card-note fixed">在下方选择挂载点（左侧选择源，右侧选择目标），导航进入子目录，选择任意深度目录后点击“加入已选”。<br><small style="color:var(--note-text)">可多选；目标可重复添加。若挂载点缺失，请在 docker-compose 中映射宿主目录并重启容器。</small></div>
         <div class="quick-row">
           <div class="quick-col">
             <label>源目录选择</label>
@@ -30,14 +26,9 @@
               </div>
               <div id="srcBreadcrumb" class="breadcrumb"></div>
               <div id="srcEntries" class="entries"></div>
-              <div class="browser actions">
-                <div class="btn-row-small">
-                  <button id="chooseSrcBtn" class="small src-add">加入已选（源）</button>
-                </div>
-              </div>
+              <div class="browser actions"><button id="chooseSrcBtn" class="small src-add">加入已选（源）</button></div>
             </div>
           </div>
-
           <div class="quick-col">
             <label>目标目录选择</label>
             <div class="browser">
@@ -47,11 +38,7 @@
               </div>
               <div id="dstBreadcrumb" class="breadcrumb"></div>
               <div id="dstEntries" class="entries"></div>
-              <div class="browser actions">
-                <div class="btn-row-small">
-                  <button id="chooseDstBtn" class="small dst-add">加入已选（目标）</button>
-                </div>
-              </div>
+              <div class="browser actions"><button id="chooseDstBtn" class="small dst-add">加入已选（目标）</button></div>
             </div>
           </div>
         </div>
@@ -70,7 +57,6 @@
             <div id="dstList" class="pills"></div>
           </div>
         </div>
-
         <div class="controls">
           <div class="btn-row">
             <label class="mode-label"><input type="radio" name="mode" value="incremental" checked /> 增量备份</label>
@@ -80,14 +66,14 @@
             <button id="addPairs" class="primary">添加任务</button>
             <button id="clearSelected" class="danger">清空已选</button>
           </div>
-          <div class="card-note small" style="margin-top:12px;">说明：按索引配对（第1源→第1目标，第2源→第2目标）。备份模式：增量（仅处理新增的，使用 sqlite 索引/backup_log.txt）或 全量（忽略索引，全部重新生成并覆盖占位文件）。</div>
+          <div class="card-note small" style="margin-top:12px;">说明：按索引配对（第1源→第1目标），增量：仅新增；全量：重新生成。注：请在 docker-compose 中映射宿主目录以便在页面中选择。</div>
         </div>
       </div>
 
       <div class="panel card">
         <h3>任务队列</h3>
         <ul id="queue"></ul>
-        <div class="card-note small">已提交但未执行的任务显示在这里。</div>
+        <div class="card-note small">已提交的任务显示这里。</div>
       </div>
     </div>
 
@@ -95,11 +81,10 @@
       <div class="panel card">
         <h3>运行日志</h3>
         <pre id="log" class="log"></pre>
-        <div class="card-note small">日志仅显示最近 100 条。</div>
+        <div class="card-note small">仅显示最近 100 条日志以避免浏览器卡顿。</div>
       </div>
     </div>
   </div>
-
   <script src="/static/js/app.js"></script>
 </body>
 </html>
