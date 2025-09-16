@@ -7,7 +7,6 @@ APP_PORT = int(os.environ.get('APP_PORT', '18008'))
 BACKUP_DIR = Path(os.environ.get('BACKUP_DIR', '/app/data')).resolve()
 ALLOWED_ROOTS_ENV = os.environ.get('ALLOWED_ROOTS', '')
 
-# ensure service dir
 BACKUP_DIR.mkdir(parents=True, exist_ok=True)
 SERVICE_LOG = BACKUP_DIR.joinpath('service_log.txt')
 
@@ -31,7 +30,7 @@ try:
     default_rate = float(os.environ.get('BACKUP_RATE', '20'))
 except Exception:
     default_rate = 20.0
-worker = BackupWorker(task_queue, ALLOWED_ROOTS, ops_per_sec=default_rate, service_log_path=SERVICE_LOG)
+worker = BackupWorker(task_queue, BACKUP_DIR, ALLOWED_ROOTS, ops_per_sec=default_rate, service_log_path=SERVICE_LOG)
 worker.start()
 
 def _is_allowed_path(p: Path) -> bool:

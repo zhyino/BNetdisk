@@ -11,14 +11,13 @@ def discover_mount_points():
                 if len(parts) >= 2:
                     mp = parts[1]
                     fst = parts[2] if len(parts) > 2 else ''
-                    # skip virtual filesystems
                     if fst in ('proc','sysfs','tmpfs','devtmpfs','cgroup','cgroup2','overlay','squashfs','debugfs','tracefs','securityfs','ramfs','rootfs','fusectl','mqueue'):
                         continue
                     if not mp or not mp.startswith('/'):
                         continue
                     roots.add(mp)
     except Exception:
-        for p in ('/mnt','/media','/data','/srv'):
+        for p in ('/mnt', '/media', '/data', '/srv'):
             if Path(p).exists():
                 roots.add(p)
     filtered = []
@@ -33,6 +32,7 @@ class ServiceLogWriter(threading.Thread):
         super().__init__(daemon=True)
         self.path = Path(path)
         self.queue = queue.Queue(maxsize=10000)
+        self.max_lines_keep = max_lines_keep
         self.deque = deque(maxlen=max_lines_keep)
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -80,9 +80,10 @@ class ServiceLogWriter(threading.Thread):
 class BackupWorker(threading.Thread):
     IMAGE_EXTS = {'.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg', '.heic', '.ico'}
 
-    def __init__(self, task_queue: queue.Queue, allowed_roots, ops_per_sec: float = 20.0, service_log_path: Path=None):
+    def __init__(self, task_queue: queue.Queue, backup_dir: Path, allowed_roots, ops_per_sec: float = 20.0, service_log_path: Path=None):
         super().__init__(daemon=True)
         self.task_queue = task_queue
+        self.backup_dir = Path(backup_dir)
         self.allowed_roots = [p.resolve() for p in allowed_roots]
         self._clients = []
         self._clients_lock = threading.RLock()
@@ -96,7 +97,7 @@ class BackupWorker(threading.Thread):
         self._delay = 0.0 if self.ops_per_sec <= 0 else max(0.0, 1.0 / float(self.ops_per_sec))
 
         if service_log_path is None:
-            service_log_path = Path('/app/data/service_log.txt')
+            service_log_path = self.backup_dir.joinpath('service_log.txt')
         self.service_writer = ServiceLogWriter(service_log_path)
         self.service_writer.start()
 
@@ -188,9 +189,8 @@ class BackupWorker(threading.Thread):
             return False
         tmp = dest_file.parent.joinpath(dest_file.name + '.tmp')
         try:
-            # write zero-byte placeholder (very small IO)
             with tmp.open('wb') as f:
-                pass
+                f.write(b'\0' * 1024)
             os.replace(str(tmp), str(dest_file))
             return True
         except Exception as e:
@@ -289,8 +289,7 @@ class BackupWorker(threading.Thread):
                         src_file = Path(dirpath) / fname
                         target_dir = dest_root / rel
                         target_file = target_dir / fname
-                        # check if generated placeholder already exists (skip to reduce IO)
-                        if target_file.exists() and not overwrite:
+                        if not overwrite and target_file.exists():
                             skipped += 1
                             continue
                         ok = self._create_placeholder(target_file, overwrite=overwrite)
