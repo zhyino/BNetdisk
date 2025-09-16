@@ -269,23 +269,13 @@ function initLogStream() {
       let firstMsg = true;
       const start = Date.now();
       es.onmessage = (e) => {
-        // handle incoming event: support multi-line and literal "\n" escapes
-        let data = e.data || '';
-        // convert literal backslash-n sequences to real newlines, then split into lines
-        try {
-            data = data.replace(/\\\n/g, '\\n'); // remove escaped backslash-newline if any
-        } catch (err) {}
-        // also unescape literal "\n" sequences
-        try {
-            data = data.replace(/\\n/g, '\n');
-        } catch (err) {}
-        const incoming = data.split(/\\r?\\n/).filter(Boolean);
-        const lines = (logEl.textContent || '').split('\\n').filter(Boolean);
-        const combined = lines.concat(incoming);
-        const tail = combined.slice(-100);
-        logEl.textContent = tail.join('\\n') + (tail.length ? '\\n' : '');
+        const lines = (logEl.textContent || '').split('\n').filter(Boolean);
+        lines.push(e.data);
+        const tail = lines.slice(-100);
+        logEl.textContent = tail.join('\n') + '\n';
         logEl.scrollTop = logEl.scrollHeight;
-    };
+        firstMsg = false;
+      };
       es.onerror = (e) => {
         console.warn('EventSource error', e);
         if (Date.now() - start > 5000) {
@@ -310,8 +300,8 @@ async function fetchLogsOnce() {
     const res = await fetch('/api/logs?n=100');
     if (!res.ok) return;
     const j = await res.json();
-    const lines = (j.lines || []).map(l => (typeof l === 'string'? l.replace(/\\n/g,'\n') : l));
-    logEl.textContent = lines.join('\\n') + (lines.length ? '\\n' : '');
+    const lines = j.lines || [];
+    logEl.textContent = lines.join('\n') + (lines.length ? '\n' : '');
     logEl.scrollTop = logEl.scrollHeight;
   } catch (err) {
     console.warn('fetchLogsOnce error', err);

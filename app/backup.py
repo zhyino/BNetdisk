@@ -32,7 +32,6 @@ class ServiceLogWriter(threading.Thread):
         super().__init__(daemon=True)
         self.path = Path(path)
         self.queue = queue.Queue(maxsize=10000)
-        self.max_lines_keep = max_lines_keep
         self.deque = deque(maxlen=max_lines_keep)
         try:
             self.path.parent.mkdir(parents=True, exist_ok=True)
@@ -148,7 +147,7 @@ class BackupWorker(threading.Thread):
             except Exception:
                 pass
 
-    def _is_allowed_path(self, p: Path) -> bool:
+    def _is_allowed_path(self, p):
         try:
             p = p.resolve()
         except Exception:
@@ -289,9 +288,13 @@ class BackupWorker(threading.Thread):
                         src_file = Path(dirpath) / fname
                         target_dir = dest_root / rel
                         target_file = target_dir / fname
-                        if not overwrite and target_file.exists():
-                            skipped += 1
-                            continue
+                        # Skip if already exists (incremental behavior)
+                        try:
+                            if target_file.exists() and not overwrite:
+                                skipped += 1
+                                continue
+                        except Exception:
+                            pass
                         ok = self._create_placeholder(target_file, overwrite=overwrite)
                         if ok:
                             backed += 1
