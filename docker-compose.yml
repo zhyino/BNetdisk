@@ -1,21 +1,18 @@
-version: "3.8"
+version: '3.8'
 services:
   backup-web:
     build: .
     image: ghcr.io/zhyino/bnetdisk:latest
     container_name: backup-web
     ports:
-      - "18008:18008"
+      - '18008:18008'
     volumes:
       - ./data:/app/data:rw
-      # 示例：若想在 UI 中看到宿主目录下的 /vol2/1000/Video/115，请映射如下
+      # 示例：把宿主目录映射到容器，使其出现在挂载点列表并可选择
       # - /vol2/1000/Video/115:/115:rw
       # - /vol2/1000/Video/Video:/Video:rw
     environment:
       - BACKUP_DIR=/app/data
       - BACKUP_RATE=20
       - APP_PORT=18008
-      # - INDEX_MODE=memory   # memory 或 sqlite
-      # - UID=1000
-      # - GID=1001
     restart: unless-stopped
