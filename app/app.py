@@ -218,7 +218,18 @@ def stream():
         try:
             while True:
                 msg = q.get()
-                yield f"data: {msg}\n\n"
+                # ensure multi-line messages are sent as multiple 'data:' lines per SSE spec
+                try:
+                    parts = str(msg).splitlines()
+                    if not parts:
+                        yield "data: \n\n"
+                    else:
+                        for p in parts:
+                            # escape any carriage returns within line
+                            yield f"data: {p}\n"
+                        yield "\n"
+                except Exception:
+                    yield f"data: {msg}\n\n"
         finally:
             try:
                 worker.unregister_client(q)
