@@ -9,36 +9,115 @@ from typing import Iterable, List, Optional, Sequence
 SKIP_FS_TYPES = frozenset({
     'proc', 'sysfs', 'tmpfs', 'devtmpfs', 'cgroup', 'cgroup2',
     'overlay', 'squashfs', 'debugfs', 'tracefs', 'securityfs',
-    'ramfs', 'rootfs', 'fusectl', 'mqueue',
+    'ramfs', 'rootfs', 'fusectl', 'mqueue', 'pstore', 'bpf',
+    'configfs', 'devpts', 'hugetlbfs', 'autofs', 'nsfs',
 })
-SKIP_ROOTS = frozenset({'/', '/proc', '/sys', '/dev'})
+
+# Exact roots that should never appear in the directory browser.
+SKIP_ROOTS = frozenset({
+    '/',
+    '/proc', '/sys', '/dev', '/run', '/tmp',
+    '/boot', '/etc', '/usr', '/bin', '/sbin', '/lib', '/lib64',
+    '/var', '/opt', '/root', '/home',
+    '/app',  # container app code, not a media volume
+})
+
+# Prefixes treated as container/system internals (hidden from browser roots).
+INTERNAL_PREFIXES = (
+    '/proc/', '/sys/', '/dev/', '/run/', '/tmp/',
+    '/boot/', '/etc/', '/usr/', '/bin/', '/sbin/', '/lib/', '/lib64/',
+    '/var/lib/', '/var/run/', '/var/cache/', '/var/log/', '/var/spool/',
+    '/root/',
+    '/app/',  # hide /app and /app/data from mount picker
+    '/snap/',
+    '/lost+found',
+)
+
+# Preferred host/container volume locations for non-Linux fallbacks.
+FALLBACK_CANDIDATES = (
+    '/mnt', '/media', '/data', '/srv', '/share', '/shares',
+    '/volume1', '/volume2', '/volume3',
+    '/Volumes', '/Users',
+)
+
+
+def _is_internal_path(path: str) -> bool:
+    if not path or path in SKIP_ROOTS:
+        return True
+    if path in ('/app', '/app/data'):
+        return True
+    for prefix in INTERNAL_PREFIXES:
+        if path == prefix.rstrip('/') or path.startswith(prefix):
+            return True
+    # Hide very deep system-looking paths (usually container noise).
+    parts = [p for p in path.split('/') if p]
+    if len(parts) >= 5 and parts[0] in {'var', 'usr', 'etc', 'run', 'proc', 'sys', 'dev', 'app'}:
+        return True
+    return False
+
+
+def _path_exists_dir(path: str) -> bool:
+    try:
+        p = Path(path)
+        return p.exists() and p.is_dir()
+    except OSError:
+        return False
 
 
 def discover_mount_points() -> List[Path]:
-    roots = set()
+    """Return browser-friendly mount roots, excluding container internals."""
+    roots: set[str] = set()
+
     try:
-        with open('/proc/mounts', 'r', encoding='utf-8', errors='ignore') as f:
-            for line in f:
+        with open('/proc/mounts', 'r', encoding='utf-8', errors='ignore') as handle:
+            for line in handle:
                 parts = line.split()
-                if len(parts) < 2:
+                if len(parts) < 3:
                     continue
                 mount_point = parts[1]
-                fs_type = parts[2] if len(parts) > 2 else ''
+                fs_type = parts[2]
                 if fs_type in SKIP_FS_TYPES:
                     continue
                 if not mount_point.startswith('/'):
                     continue
+                # /proc/mounts escapes spaces as \040
+                mount_point = mount_point.replace('\040', ' ')
+                if _is_internal_path(mount_point):
+                    continue
+                if not _path_exists_dir(mount_point):
+                    continue
                 roots.add(mount_point)
     except OSError:
-        for candidate in ('/mnt', '/media', '/data', '/srv', '/Volumes', '/Users'):
-            if Path(candidate).exists():
+        for candidate in FALLBACK_CANDIDATES:
+            if _path_exists_dir(candidate) and not _is_internal_path(candidate):
                 roots.add(candidate)
 
-    for candidate in ('/app/data', '/app'):
-        if Path(candidate).exists():
+    # Always include common volume parents when present (even if not separate mounts).
+    for candidate in FALLBACK_CANDIDATES:
+        if _path_exists_dir(candidate) and not _is_internal_path(candidate):
             roots.add(candidate)
 
-    return [Path(item) for item in sorted(roots) if item not in SKIP_ROOTS]
+    # Prefer shorter roots first, drop children when a parent root already exists
+    # only if child is clearly nested under a selected parent *and* not a real separate
+    # user mount we still want. Keep all non-internal mounts, but sort usefully.
+    cleaned = sorted(roots, key=lambda item: (item.count('/'), item.lower()))
+    return [Path(item) for item in cleaned]
+
+
+def list_browser_roots(limit: int = 200) -> List[str]:
+    """Public helper used by the web UI mount picker."""
+    points = discover_mount_points()
+    out: List[str] = []
+    seen = set()
+    for path in points:
+        text = str(path)
+        if text in seen:
+            continue
+        seen.add(text)
+        out.append(text)
+        if len(out) >= limit:
+            break
+    return out
 
 
 def normalize_roots(items: Iterable) -> List[Path]:
