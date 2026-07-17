@@ -34,17 +34,17 @@ INTERNAL_PREFIXES = (
 )
 
 # Preferred host/container volume locations for non-Linux fallbacks.
+# NOTE: Do NOT auto-list bare /Users or /Volumes here — that would expose the
+# whole user tree in the browser. Paths under /Users/... or /Volumes/... remain
+# fully usable when the user maps them or sets ALLOWED_ROOTS.
 FALLBACK_CANDIDATES = (
     '/mnt', '/media', '/data', '/srv', '/share', '/shares',
     '/volume1', '/volume2', '/volume3',
-    '/Volumes', '/Users',
 )
 
 
 def _is_internal_path(path: str) -> bool:
     if not path or path in SKIP_ROOTS:
-        return True
-    if path in ('/app', '/app/data'):
         return True
     for prefix in INTERNAL_PREFIXES:
         if path == prefix.rstrip('/') or path.startswith(prefix):
@@ -92,7 +92,8 @@ def discover_mount_points() -> List[Path]:
             if _path_exists_dir(candidate) and not _is_internal_path(candidate):
                 roots.add(candidate)
 
-    # Always include common volume parents when present (even if not separate mounts).
+    # Include common volume parents when present (NAS/Docker style mounts).
+    # Intentionally excludes bare /Users and /Volumes (see FALLBACK_CANDIDATES).
     for candidate in FALLBACK_CANDIDATES:
         if _path_exists_dir(candidate) and not _is_internal_path(candidate):
             roots.add(candidate)
@@ -124,8 +125,14 @@ def normalize_roots(items: Iterable) -> List[Path]:
     normalized: List[Path] = []
     seen = set()
     for item in items:
+        if item is None:
+            continue
+        raw = str(item).strip()
+        # Reject blank tokens — Path('').resolve() becomes CWD and would leak /app.
+        if not raw:
+            continue
         try:
-            path = Path(item).resolve()
+            path = Path(raw).expanduser().resolve()
         except (OSError, RuntimeError, ValueError):
             continue
         key = str(path)
@@ -137,9 +144,19 @@ def normalize_roots(items: Iterable) -> List[Path]:
 
 
 def parse_allowed_roots_env(value: str) -> List[Path]:
-    if not value:
+    """Parse comma-separated ALLOWED_ROOTS.
+
+    Empty segments from trailing/double commas are discarded.
+    Never resolve blank tokens to the current working directory.
+    """
+    if not value or not str(value).strip():
         return []
-    return normalize_roots(re.split(r'\s*,\s*', value) if value else [])
+    parts = []
+    for part in re.split(r'\s*,\s*', str(value)):
+        cleaned = part.strip()
+        if cleaned:
+            parts.append(cleaned)
+    return normalize_roots(parts)
 
 
 def path_under_root(path: Path, root: Path) -> bool:

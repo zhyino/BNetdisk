@@ -98,7 +98,8 @@ def tail_file_lines(path: Path, lines: int = 100):
     except OSError:
         try:
             with open(path, 'r', encoding='utf-8', errors='ignore') as handle:
-                return handle.readlines()[-lines:]
+                # Keep the same "no trailing newline" shape as splitlines().
+                return handle.read().splitlines()[-lines:]
         except OSError:
             return []
 
@@ -193,10 +194,12 @@ def listdir():
         return jsonify({'error': 'not exists or not dir'}), 400
 
     entries = []
+    truncated = False
     try:
         with os.scandir(target) as iterator:
             for entry in iterator:
                 if len(entries) >= MAX_LIST_ENTRIES:
+                    truncated = True
                     break
                 try:
                     is_dir = entry.is_dir(follow_symlinks=False)
@@ -210,7 +213,11 @@ def listdir():
                 })
     except OSError:
         try:
-            for name in os.listdir(target)[:MAX_LIST_ENTRIES]:
+            names = os.listdir(target)
+            if len(names) > MAX_LIST_ENTRIES:
+                truncated = True
+                names = names[:MAX_LIST_ENTRIES]
+            for name in names:
                 entry_path = target / name
                 try:
                     is_dir = entry_path.is_dir()
@@ -230,7 +237,7 @@ def listdir():
         'path': str(target),
         'entries': entries,
         'count': len(entries),
-        'truncated': len(entries) >= MAX_LIST_ENTRIES,
+        'truncated': truncated,
     })
 
 

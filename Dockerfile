@@ -1,3 +1,4 @@
+# Keep on 3.11 unless requirements are re-tested on newer CPython.
 FROM python:3.11-slim
 
 WORKDIR /app
