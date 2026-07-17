@@ -23,17 +23,8 @@
           <i class="dot"></i>
           <span id="connectionText">连接中</span>
         </div>
-        <div class="rate-control" id="rateControl" title="每秒生成文件数，0 表示不限速">
-          <label for="rateInput">速率</label>
-          <input id="rateInput" class="rate-input" type="number" min="0" max="5000" step="1" value="20" />
-          <span class="rate-unit">/s</span>
-          <button id="applyRateBtn" class="btn soft mini" type="button">应用</button>
-          <div class="rate-presets">
-            <button type="button" class="btn mini rate-preset" data-rate="20">稳</button>
-            <button type="button" class="btn mini rate-preset" data-rate="100">快</button>
-            <button type="button" class="btn mini rate-preset" data-rate="500">猛</button>
-            <button type="button" class="btn mini rate-preset" data-rate="0">不限</button>
-          </div>
+        <div class="pill soft" id="ratePill" title="当前生成速率">
+          <span id="rateText">速率 --/s</span>
         </div>
         <button id="refreshRoots" class="btn ghost" type="button">刷新挂载点</button>
       </div>
@@ -55,7 +46,7 @@
 
           <div class="tip">
             <strong>配对规则：</strong>第 1 源 → 第 1 目标，第 2 源 → 第 2 目标。目标可重复添加。
-            <div class="tip-sub">右上角可实时调节生成速度：远程挂载建议 20–100/s，本地磁盘可更高；0 为不限速。</div>
+            <div class="tip-sub">下方“生成速度”可实时调节：远程挂载建议 20–100/s，本地磁盘可更高；0 为不限速。</div>
           </div>
 
           <div class="browsers">
@@ -130,6 +121,32 @@
                 <small>覆盖重写目标中的视频占位文件</small>
               </span>
             </label>
+          </div>
+
+          <div class="rate-panel" id="rateControl">
+            <div class="rate-panel-head">
+              <div>
+                <h3>生成速度</h3>
+                <p class="muted">控制每秒创建占位文件数量。远程挂载建议 20–100，本地可更高，0 为不限速。</p>
+              </div>
+              <div class="rate-current">当前 <strong id="rateTextPanel">--/s</strong></div>
+            </div>
+            <div class="rate-panel-body">
+              <div class="rate-input-wrap">
+                <label for="rateInput">每秒文件数</label>
+                <div class="rate-input-row">
+                  <input id="rateInput" class="rate-input" type="number" min="0" max="5000" step="1" value="20" />
+                  <span class="rate-unit">files/s</span>
+                  <button id="applyRateBtn" class="btn primary" type="button">应用速度</button>
+                </div>
+              </div>
+              <div class="rate-presets" aria-label="速度预设">
+                <button type="button" class="btn soft rate-preset" data-rate="20">稳妥 20</button>
+                <button type="button" class="btn soft rate-preset" data-rate="100">较快 100</button>
+                <button type="button" class="btn soft rate-preset" data-rate="500">很快 500</button>
+                <button type="button" class="btn soft rate-preset" data-rate="0">不限速</button>
+              </div>
+            </div>
           </div>
 
           <div class="actions">

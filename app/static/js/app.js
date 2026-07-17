@@ -35,6 +35,8 @@
     currentTask: $('currentTask'),
     rateInput: $('rateInput'),
     applyRateBtn: $('applyRateBtn'),
+    rateText: $('rateText'),
+    rateTextPanel: $('rateTextPanel'),
     videoExtHint: $('videoExtHint'),
   };
 
@@ -400,9 +402,16 @@
   }
 
   function setRateInput(rate) {
-    if (!els.rateInput) return;
     const n = Number(rate);
-    els.rateInput.value = Number.isFinite(n) ? String(n) : '20';
+    const safe = Number.isFinite(n) ? n : 20;
+    if (els.rateInput) els.rateInput.value = String(safe);
+    const label = formatRate(safe);
+    if (els.rateText) els.rateText.textContent = `速率 ${label}`;
+    if (els.rateTextPanel) els.rateTextPanel.textContent = label;
+    document.querySelectorAll('.rate-preset').forEach((btn) => {
+      const preset = Number(btn.getAttribute('data-rate'));
+      btn.classList.toggle('active', Number.isFinite(preset) && preset === safe);
+    });
   }
 
   async function loadMeta() {
