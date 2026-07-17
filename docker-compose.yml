@@ -9,15 +9,21 @@ services:
     ports:
       - "18008:18008"
     volumes:
-      - ./data:/app/data:rw # 容器用于存放 service_log.txt 与其他数据的持久化目录（容器会创建）
-      # 要让 Web 页面能浏览并选择宿主机上的目录，必须在下面把宿主机目录映射到容器中（示例）：
-      # - /vol2/1000/Video/115:/115:rw
-      # - /vol2/1000/Video/Video:/Video:rw
+      - ./data:/app/data:rw
+      # 源目录（真实视频，可来自网盘挂载，建议只读）
+      # - /path/to/cloud/media:/Nas:ro
+      # 目标目录（假文件输出，请用本地硬盘，需要可写）
+      # - /path/to/local/placeholders:/115:rw
     environment:
       - BACKUP_DIR=/app/data
+      # 源目录扫描速度（文件/秒）。用于避免网盘被频繁读取触发封控；0=不限速
       - BACKUP_RATE=20
       - APP_PORT=18008
-      # 可选：将容器创建的数据文件属主改为宿主用户（仅当容器以 root 运行时有效）
+      # 可选：限制可访问根路径（逗号分隔）。设置后更安全
+      # - ALLOWED_ROOTS=/Nas,/115,/app/data
+      # 可选：将 /app/data 属主改为宿主用户（容器以 root 启动时有效）
       # - UID=1000
       # - GID=1001
     restart: unless-stopped
+    # 若需要固定用户运行，可取消注释：
+    # user: "1000:1001"

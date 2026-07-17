@@ -3,160 +3,316 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>BNetdisk · 假文件入库管理面板</title>
+  <title>BNetdisk · 假文件入库</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">BN</div>
-        <div class="brand-text">
-          <div class="brand-title">假文件入库管理面板</div>
-          <div class="brand-sub">BNetdisk · 源目录镜像生成占位文件</div>
+        <div class="logo" aria-hidden="true"><span></span><span></span><span></span></div>
+        <div>
+          <div class="brand-title">假文件入库</div>
+          <div class="brand-sub">BNetdisk <span id="appVersion">v{{ version }}</span> · 仅生成视频占位文件</div>
         </div>
       </div>
-      <div class="topbar-actions">
-        <div class="status-pill" id="connectionStatus" title="日志连接状态">
-          <span class="status-dot"></span>
+      <div class="top-actions">
+        <div class="pill" id="connectionStatus" title="日志连接">
+          <i class="dot"></i>
           <span id="connectionText">连接中</span>
         </div>
-        <button id="refreshRoots" class="btn btn-ghost" type="button">刷新挂载点</button>
+        <div class="pill soft" id="ratePill" title="源目录扫描速度（保护网盘读取）">
+          <span id="rateText">源扫描 --/s</span>
+        </div>
       </div>
     </header>
 
-    <main class="container">
-      <section class="left">
-        <div class="panel card">
-          <div class="panel-head">
+    <main class="layout">
+      <section class="col main-col">
+        <article class="card browse-card">
+          <div class="card-head compact">
             <div>
-              <h3>目录浏览与选择</h3>
-              <p class="panel-desc">左侧选源目录，右侧选目标目录；可进入任意子目录后再加入已选。</p>
+              <div class="section-kicker">步骤一</div>
+              <h2>选择目录</h2>
+              <p class="muted">左侧源目录读取视频，右侧目标目录写入假文件。两栏结构对齐。</p>
+            </div>
+          </div>
+          <div class="guide-block">
+            <div class="guide-line">
+              <span class="guide-item"><em>1</em>选择源目录</span>
+              <span class="guide-sep">→</span>
+              <span class="guide-item"><em>2</em>选择目标目录</span>
+              <span class="guide-sep">→</span>
+              <span class="guide-item"><em>3</em>开始生成假文件</span>
+              <button id="refreshRoots" class="btn soft guide-refresh" type="button">刷新挂载点</button>
+            </div>
+            <p class="guide-note">源目录可选网盘/远程媒体；目标目录请选<strong>本地硬盘</strong>路径，生成更快、也更稳定。</p>
+            <div class="dest-tip">
+              <span class="dest-tip-badge">重要</span>
+              <span>目标目录请选本地硬盘（如 `/volume1`、`/mnt/data`），不要选网盘路径，否则会很慢且不稳定。</span>
             </div>
           </div>
 
-          <div class="info-banner" id="mainNote">
-            <div class="info-icon" aria-hidden="true">i</div>
+          <div class="browsers">
+            <section class="browser src">
+              <header class="browser-top">
+                <div class="browser-title">
+                  <span class="tag src">源</span>
+                  <div>
+                    <h3>源目录 · 读取视频</h3>
+                    <p>真实媒体所在目录（可来自网盘挂载）</p>
+                  </div>
+                </div>
+              </header>
+
+              <div class="pathbar">
+                <select id="srcRootSelect" class="select" aria-label="源挂载点"></select>
+                <button id="srcUpBtn" class="btn soft icon-btn" type="button" title="返回上层">↑</button>
+              </div>
+              <div class="location" title="">
+                <span class="location-label">位置</span>
+                <span id="srcCurrentPath" class="location-path">未选择</span>
+              </div>
+              <div id="srcBreadcrumb" class="crumbs" hidden></div>
+              <div id="srcEntries" class="entries" role="list"></div>
+              <button id="chooseSrcBtn" class="btn primary block" type="button">添加为源目录</button>
+            </section>
+
+            <div class="browser-arrow" aria-hidden="true">
+              <span>→</span>
+            </div>
+
+            <section class="browser dst">
+              <header class="browser-top">
+                <div class="browser-title">
+                  <span class="tag dst">目标</span>
+                  <div>
+                    <h3>目标目录 · 写入假文件</h3>
+                    <p>假文件输出目录（请选本地硬盘）</p>
+                  </div>
+                </div>
+              </header>
+
+              <div class="pathbar">
+                <select id="dstRootSelect" class="select" aria-label="目标挂载点"></select>
+                <button id="dstUpBtn" class="btn soft icon-btn" type="button" title="返回上层">↑</button>
+              </div>
+              <div class="location" title="">
+                <span class="location-label">位置</span>
+                <span id="dstCurrentPath" class="location-path">未选择</span>
+              </div>
+              <div id="dstBreadcrumb" class="crumbs" hidden></div>
+              <div id="dstEntries" class="entries" role="list"></div>
+              <button id="chooseDstBtn" class="btn accent block" type="button">添加为目标目录</button>
+            </section>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head compact">
             <div>
-              可多选源与目标；目标可重复添加，便于多个源按索引配对到同一目标。
-              <div class="info-sub">若挂载点未出现，请在 docker-compose 中映射宿主目录并重启容器。</div>
+              <h2>待生成任务</h2>
+              <p class="muted">按索引配对：第 1 源 → 第 1 目标，第 2 源 → 第 2 目标。目标可重复添加。</p>
             </div>
+            <span class="chip" id="pairCount">0 对</span>
           </div>
 
-          <div class="quick-row">
-            <div class="quick-col browser-card src-tone">
-              <div class="browser-label">
-                <span class="tone-badge src">源</span>
-                <span>源目录选择</span>
-              </div>
-              <div class="browser">
-                <div class="browser-row">
-                  <select id="srcRootSelect" class="root-select" aria-label="源挂载点"></select>
-                  <button id="srcUpBtn" class="btn btn-soft" type="button" title="返回上层">↑ 上层</button>
-                </div>
-                <div id="srcBreadcrumb" class="breadcrumb" aria-label="源路径面包屑"></div>
-                <div id="srcEntries" class="entries" role="list"></div>
-                <div class="browser-actions">
-                  <button id="chooseSrcBtn" class="btn btn-src" type="button">加入已选（源）</button>
-                </div>
-              </div>
+          <div class="pair-table-wrap">
+            <div class="pair-table-head">
+              <span>#</span>
+              <span>源目录（真实视频）</span>
+              <span></span>
+              <span>目标目录（本地假文件）</span>
             </div>
-
-            <div class="quick-col browser-card dst-tone">
-              <div class="browser-label">
-                <span class="tone-badge dst">目标</span>
-                <span>目标目录选择</span>
-              </div>
-              <div class="browser">
-                <div class="browser-row">
-                  <select id="dstRootSelect" class="root-select" aria-label="目标挂载点"></select>
-                  <button id="dstUpBtn" class="btn btn-soft" type="button" title="返回上层">↑ 上层</button>
-                </div>
-                <div id="dstBreadcrumb" class="breadcrumb" aria-label="目标路径面包屑"></div>
-                <div id="dstEntries" class="entries" role="list"></div>
-                <div class="browser-actions">
-                  <button id="chooseDstBtn" class="btn btn-dst" type="button">加入已选（目标）</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel card">
-          <div class="panel-head">
-            <div>
-              <h3>已选择（源 / 目标）</h3>
-              <p class="panel-desc">按索引配对：第 1 源 → 第 1 目标。默认仅生成视频文件占位。</p>
-            </div>
-            <div class="count-chips">
-              <span class="chip src" id="srcCount">源 0</span>
-              <span class="chip dst" id="dstCount">目标 0</span>
-            </div>
+            <div id="pairList" class="pair-table" data-empty="还没有任务。请在上方选择源目录与目标目录后添加。"></div>
           </div>
 
-          <div class="selected-wrap">
-            <div class="sel-col">
-              <h4>来源 Sources</h4>
-              <div id="srcList" class="pills empty-box" data-empty="尚未选择源目录"></div>
-            </div>
-            <div class="sel-col">
-              <h4>目标 Destinations</h4>
-              <div id="dstList" class="pills empty-box" data-empty="尚未选择目标目录"></div>
-            </div>
-          </div>
+          <div id="srcList" class="hidden"></div>
+          <div id="dstList" class="hidden"></div>
+          <span id="srcCount" class="hidden">源 0</span>
+          <span id="dstCount" class="hidden">目标 0</span>
+          <span id="videoExtHint" class="hidden"></span>
 
-          <div class="controls">
-            <div class="mode-row" role="radiogroup" aria-label="备份模式">
-              <label class="mode-card">
+          <div class="simple-options">
+            <div class="mode-row-simple" role="radiogroup" aria-label="生成模式">
+              <label class="mode simple">
                 <input type="radio" name="mode" value="incremental" checked />
-                <span class="mode-body">
-                  <strong>增量备份</strong>
-                  <small>跳过目标已存在的占位文件</small>
+                <span>
+                  <strong>增量</strong>
+                  <small>已有假文件会跳过</small>
                 </span>
               </label>
-              <label class="mode-card">
+              <label class="mode simple">
                 <input type="radio" name="mode" value="full" />
-                <span class="mode-body">
-                  <strong>全量备份</strong>
-                  <small>覆盖重写目标占位文件</small>
+                <span>
+                  <strong>全量</strong>
+                  <small>覆盖重写全部假文件</small>
                 </span>
               </label>
             </div>
-            <div class="btn-row">
-              <button id="addPairs" class="btn btn-primary" type="button">添加任务</button>
-              <button id="clearSelected" class="btn btn-danger" type="button">清空已选</button>
-            </div>
-          </div>
-        </div>
 
-        <div class="panel card queue-card">
-          <div class="panel-head">
-            <div>
-              <h3>任务队列</h3>
-              <p class="panel-desc">已提交但尚未执行的任务。</p>
+            <div class="rate-panel simple" id="rateControl">
+              <div class="rate-simple-row">
+                <label for="rateInput">源目录扫描速度</label>
+                <input id="rateInput" class="rate-input" type="number" min="0" max="5000" step="1" value="20" />
+                <span class="rate-unit">个/秒</span>
+                <button id="applyRateBtn" class="btn primary" type="button">应用</button>
+                <span class="rate-current">当前 <strong id="rateTextPanel">--</strong></span>
+              </div>
+              <div class="rate-presets" aria-label="速度预设">
+                <button type="button" class="btn soft rate-preset" data-rate="20">稳 20</button>
+                <button type="button" class="btn soft rate-preset" data-rate="100">快 100</button>
+                <button type="button" class="btn soft rate-preset" data-rate="500">猛 500</button>
+                <button type="button" class="btn soft rate-preset" data-rate="0">不限</button>
+              </div>
+              <p class="muted rate-hint">按源目录每秒处理文件数限速，避免网盘被频繁读取触发封控/报错。源在网盘建议 20–100；本地源可更高；0 表示不限速。</p>
             </div>
-            <span class="chip muted" id="queueCount">0 项</span>
           </div>
-          <ul id="queue" class="queue-list"></ul>
-        </div>
+
+          <div class="actions">
+            <button id="addPairs" class="btn primary lg" type="button">开始生成假文件</button>
+            <button id="clearSelected" class="btn danger lg" type="button">清空任务</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head compact">
+            <h2>任务队列</h2>
+            <span class="chip" id="queueCount">0</span>
+          </div>
+          <div id="currentTask" class="current-task hidden"></div>
+          <ul id="queue" class="queue" data-empty="当前没有排队中的任务"></ul>
+        </article>
       </section>
 
-      <section class="right">
-        <div class="panel card log-card">
-          <div class="panel-head">
+      <aside class="col side-col">
+        <article class="card log-card">
+          <div class="card-head compact">
             <div>
-              <h3>运行日志</h3>
-              <p class="panel-desc">实时流式日志，仅保留最近 100 条。</p>
+              <div class="section-kicker">运行状态</div>
+              <h2>运行日志</h2>
             </div>
-            <button id="clearLogBtn" class="btn btn-soft" type="button">清空显示</button>
+            <div class="log-actions">
+              <button id="copyLogBtn" class="btn soft" type="button">复制</button>
+              <button id="clearLogBtn" class="btn soft" type="button">清空</button>
+            </div>
           </div>
           <pre id="log" class="log" aria-live="polite"></pre>
-        </div>
-      </section>
+        </article>
+
+        <article class="card help-card">
+          <div class="card-head compact">
+            <div>
+              <div class="section-kicker">帮助</div>
+              <h2>详细使用说明</h2>
+            </div>
+          </div>
+
+          <div class="help-section">
+            <h3>1. 原理是什么</h3>
+            <p class="help-text">Plex 入库时主要认“路径 + 文件名 + 目录结构”，并不立刻校验真实视频内容。本工具在本地生成与真实媒体<strong>同名、同目录结构</strong>的 1KB 假文件，让 Plex 先快速扫库；扫完后再把 Plex 容器挂载切回真实文件路径即可播放。</p>
+            <ul class="help-list">
+              <li><strong>源目录</strong>：真实视频所在位置（可来自网盘/远程挂载）</li>
+              <li><strong>目标目录</strong>：假文件输出位置（请选本地硬盘）</li>
+              <li>默认只生成视频占位文件（mp4/mkv/ts/m2ts 等），图片、字幕、nfo 等会跳过</li>
+            </ul>
+          </div>
+
+          <div class="help-section">
+            <h3>2. 面板怎么用</h3>
+            <ol class="help-list">
+              <li>左侧选<strong>源目录</strong>，点“添加为源目录”</li>
+              <li>右侧选<strong>目标目录</strong>（本地硬盘），点“添加为目标目录”</li>
+              <li>在“待生成任务”里确认配对（第 1 源对应第 1 目标）</li>
+              <li>选增量/全量与速度，点“开始生成假文件”</li>
+              <li>在右侧日志查看进度；生成完成后把假文件目录挂给 Plex 扫库</li>
+            </ol>
+          </div>
+
+          <div class="help-section">
+            <h3>3. 生成后如何给 Plex 替换路径</h3>
+            <p class="help-text">关键点：Plex 容器内的挂载路径必须前后一致，只切换宿主机真实目录。</p>
+            <div class="help-steps">
+              <div class="help-step">
+                <span class="help-step-no">A</span>
+                <div>
+                  <strong>阶段一：假文件入库</strong>
+                  <p>把“目标目录下生成的假文件结构”映射进 Plex，例如：</p>
+                  <pre class="help-code"># docker-compose 示例（路径按你的实际环境改）
+# 工具生成结果类似：
+# /本地/115/CloudDrive/影音库/...
+
+# Plex 假文件阶段
+- /本地/115/CloudDrive:/media/library</pre>
+                </div>
+              </div>
+              <div class="help-step">
+                <span class="help-step-no">B</span>
+                <div>
+                  <strong>阶段二：切换真实文件</strong>
+                  <p>入库完成后，保持 Plex 容器内路径不变，只改宿主机真实源：</p>
+                  <pre class="help-code"># Plex 真实文件阶段（容器内仍是 /media/library）
+- /真实网盘/CloudDrive:/media/library</pre>
+                </div>
+              </div>
+              <div class="help-step">
+                <span class="help-step-no">C</span>
+                <div>
+                  <strong>检查</strong>
+                  <ul class="help-list">
+                    <li>容器内路径前后一致（例如都是 <code>/media/library</code>）</li>
+                    <li>目录层级、文件名与假文件阶段一致</li>
+                    <li>切换后在 Plex 刷新/分析媒体库即可播放</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="help-section">
+            <h3>4. 假文件入库的优点 / 缺点</h3>
+            <div class="help-grid">
+              <div class="help-box good">
+                <h4>优点</h4>
+                <ul class="help-list">
+                  <li>扫库快，几百 TB 也能较快入库</li>
+                  <li>减少短时间对网盘/远程带宽的冲击</li>
+                  <li>路径切换后可无缝继续使用已入库条目</li>
+                </ul>
+              </div>
+              <div class="help-box bad">
+                <h4>缺点 / 注意</h4>
+                <ul class="help-list">
+                  <li>入库阶段不能正常播放（内容是 1KB 假文件）</li>
+                  <li>媒体信息、海报、时长等可能不完整或不准确</li>
+                  <li>必须严格保证切换前后路径一致，否则会变成“新条目”</li>
+                  <li>目标目录请选本地硬盘，选网盘会很慢且不稳定</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+
+          <div class="help-section">
+            <h3>5. 模式、速度与常见问题</h3>
+            <ul class="help-list">
+              <li><strong>增量</strong>：目标已有假文件会跳过；<strong>全量</strong>：覆盖重写视频假文件</li>
+              <li>源目录扫描速度：网盘建议 <strong>20–100</strong> 个/秒（防封控）；本地源可更高；<strong>0</strong> 表示不限速</li>
+              <li>看不到目录：先确认 docker-compose 已映射 volumes，再点“刷新挂载点”</li>
+              <li>生成很慢：目标改到本地硬盘，并适当降低速度</li>
+            </ul>
+          </div>
+        </article>
+      </aside>
     </main>
   </div>
 
-  <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+  <div id="toastHost" class="toasts" aria-live="polite" aria-atomic="true"></div>
+  <script>
+    window.__BNETDISK__ = {
+      version: {{ version|tojson }},
+      videoExts: {{ video_exts|tojson }}
+    };
+  </script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
