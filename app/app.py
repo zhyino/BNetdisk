@@ -24,6 +24,7 @@ from .paths import (
     build_dest_final,
     discover_mount_points,
     is_allowed_path,
+    list_browser_roots,
     normalize_roots,
     parse_allowed_roots_env,
     path_under_root,
@@ -36,12 +37,17 @@ app = Flask(__name__, template_folder='templates', static_folder='static')
 
 
 def _discover_mount_points_safe(limit: int = 200):
+    """Mount roots for the directory browser (container internals filtered out)."""
     try:
-        points = discover_mount_points()
-        return [str(path) for path in points][:limit]
+        return list_browser_roots(limit=limit)
     except Exception as exc:  # noqa: BLE001
-        print(f'[WARN] discover_mount_points failed: {exc}', flush=True)
-        return []
+        print(f'[WARN] list_browser_roots failed: {exc}', flush=True)
+        try:
+            points = discover_mount_points()
+            return [str(path) for path in points if not str(path).startswith(('/app', '/usr', '/etc', '/var', '/proc', '/sys', '/dev', '/run'))][:limit]
+        except Exception as exc2:  # noqa: BLE001
+            print(f'[WARN] discover_mount_points failed: {exc2}', flush=True)
+            return []
 
 
 if ALLOWED_ROOTS_ENV:
@@ -92,7 +98,8 @@ def tail_file_lines(path: Path, lines: int = 100):
     except OSError:
         try:
             with open(path, 'r', encoding='utf-8', errors='ignore') as handle:
-                return handle.readlines()[-lines:]
+                # Keep the same "no trailing newline" shape as splitlines().
+                return handle.read().splitlines()[-lines:]
         except OSError:
             return []
 
@@ -187,10 +194,12 @@ def listdir():
         return jsonify({'error': 'not exists or not dir'}), 400
 
     entries = []
+    truncated = False
     try:
         with os.scandir(target) as iterator:
             for entry in iterator:
                 if len(entries) >= MAX_LIST_ENTRIES:
+                    truncated = True
                     break
                 try:
                     is_dir = entry.is_dir(follow_symlinks=False)
@@ -204,7 +213,11 @@ def listdir():
                 })
     except OSError:
         try:
-            for name in os.listdir(target)[:MAX_LIST_ENTRIES]:
+            names = os.listdir(target)
+            if len(names) > MAX_LIST_ENTRIES:
+                truncated = True
+                names = names[:MAX_LIST_ENTRIES]
+            for name in names:
                 entry_path = target / name
                 try:
                     is_dir = entry_path.is_dir()
@@ -224,7 +237,7 @@ def listdir():
         'path': str(target),
         'entries': entries,
         'count': len(entries),
-        'truncated': len(entries) >= MAX_LIST_ENTRIES,
+        'truncated': truncated,
     })
 
 
