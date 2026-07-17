@@ -33,7 +33,8 @@
     srcCurrentPath: $('srcCurrentPath'),
     dstCurrentPath: $('dstCurrentPath'),
     currentTask: $('currentTask'),
-    rateText: $('rateText'),
+    rateInput: $('rateInput'),
+    applyRateBtn: $('applyRateBtn'),
     videoExtHint: $('videoExtHint'),
   };
 
@@ -392,12 +393,24 @@
     }
   }
 
+  function formatRate(rate) {
+    const n = Number(rate);
+    if (!Number.isFinite(n)) return '--';
+    return n <= 0 ? '不限速' : `${n}/s`;
+  }
+
+  function setRateInput(rate) {
+    if (!els.rateInput) return;
+    const n = Number(rate);
+    els.rateInput.value = Number.isFinite(n) ? String(n) : '20';
+  }
+
   async function loadMeta() {
     try {
       const res = await fetch('/api/meta');
       if (!res.ok) return;
       const data = await res.json();
-      if (els.rateText) els.rateText.textContent = `速率 ${data.backup_rate || '--'}/s`;
+      setRateInput(data.backup_rate);
       if (els.videoExtHint) {
         const exts = (data.video_exts || cfg.videoExts || []).slice(0, 8).join(' ');
         els.videoExtHint.textContent = exts ? `如 ${exts}...` : '仅视频';
@@ -405,6 +418,34 @@
       }
     } catch (_) {
       /* ignore */
+    }
+  }
+
+  async function applyRate(rate) {
+    const value = rate === undefined || rate === null ? els.rateInput?.value : rate;
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      toast('请输入 >= 0 的速率', 'warn');
+      return;
+    }
+    if (els.applyRateBtn) els.applyRateBtn.disabled = true;
+    try {
+      const res = await fetch('/api/rate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ops_per_sec: parsed }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast('设置失败: ' + (data.error || res.statusText), 'error');
+        return;
+      }
+      setRateInput(data.ops_per_sec);
+      toast(`生成速度已设为 ${formatRate(data.ops_per_sec)}`, 'success');
+    } catch (err) {
+      toast('设置速率失败: ' + (err.message || err), 'error');
+    } finally {
+      if (els.applyRateBtn) els.applyRateBtn.disabled = false;
     }
   }
 
@@ -583,6 +624,25 @@
   };
 
   els.refreshRootsBtn.onclick = () => loadRootsToSelects();
+
+  if (els.applyRateBtn) {
+    els.applyRateBtn.onclick = () => applyRate();
+  }
+  if (els.rateInput) {
+    els.rateInput.addEventListener('keydown', (event) => {
+      if (event.key === 'Enter') {
+        event.preventDefault();
+        applyRate();
+      }
+    });
+  }
+  document.querySelectorAll('.rate-preset').forEach((btn) => {
+    btn.onclick = () => {
+      const rate = Number(btn.getAttribute('data-rate'));
+      setRateInput(rate);
+      applyRate(rate);
+    };
+  });
 
   window.addEventListener('load', () => {
     renderLists();

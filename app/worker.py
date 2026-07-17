@@ -40,15 +40,19 @@ class BackupWorker(threading.Thread):
         self._last_result: Optional[Dict] = None
 
         try:
-            self.ops_per_sec = float(os.environ.get('BACKUP_RATE', str(ops_per_sec)))
+            initial_rate = float(os.environ.get('BACKUP_RATE', str(ops_per_sec)))
         except (TypeError, ValueError):
-            self.ops_per_sec = ops_per_sec
-        self._delay = 0.0 if self.ops_per_sec <= 0 else max(0.0, 1.0 / float(self.ops_per_sec))
+            initial_rate = ops_per_sec
+        self._rate_lock = threading.RLock()
+        self.ops_per_sec = 0.0
+        self._delay = 0.0
 
         if service_log_path is None:
             service_log_path = self.backup_dir / 'service_log.txt'
         self.service_writer = ServiceLogWriter(service_log_path)
         self.service_writer.start()
+        # Apply after logger exists so the rate change is recorded cleanly.
+        self.set_rate(initial_rate)
 
     def stop(self) -> None:
         self._stop_event.set()
@@ -60,10 +64,12 @@ class BackupWorker(threading.Thread):
     def broadcast(self, msg: str) -> None:
         ts = time.strftime('%Y-%m-%d %H:%M:%S')
         line = f'{ts} {msg}'
-        try:
-            self.service_writer.append(line)
-        except Exception:
-            pass
+        writer = getattr(self, 'service_writer', None)
+        if writer is not None:
+            try:
+                writer.append(line)
+            except Exception:
+                pass
         with self._clients_lock:
             for client_q in list(self._clients):
                 try:
@@ -97,16 +103,46 @@ class BackupWorker(threading.Thread):
             except ValueError:
                 pass
 
+    def set_rate(self, ops_per_sec: float) -> float:
+        """Update generation speed at runtime. 0 means unlimited."""
+        try:
+            rate = float(ops_per_sec)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('invalid rate') from exc
+        if rate < 0:
+            raise ValueError('rate must be >= 0')
+        # Soft upper bound protects remote mounts from accidental overload.
+        if rate > 5000:
+            rate = 5000.0
+        with self._rate_lock:
+            self.ops_per_sec = rate
+            self._delay = 0.0 if rate <= 0 else max(0.0, 1.0 / rate)
+            applied = self.ops_per_sec
+        self.broadcast(f'[INFO] Backup rate set to {applied:g} ops/sec' + (' (unlimited)' if applied <= 0 else ''))
+        return applied
+
+    def get_rate(self) -> float:
+        with self._rate_lock:
+            return float(self.ops_per_sec)
+
+    def _sleep_for_rate(self) -> None:
+        with self._rate_lock:
+            delay = self._delay
+        if delay > 0:
+            time.sleep(delay)
+
     def get_status(self) -> Dict:
         with self._stats_lock:
-            return {
-                'running': not self._stop_event.is_set(),
-                'queue_size': self.task_queue.qsize(),
-                'current': self._current_task,
-                'last_result': self._last_result,
-                'ops_per_sec': self.ops_per_sec,
-                'videos_only': True,
-            }
+            current = self._current_task
+            last_result = self._last_result
+        return {
+            'running': not self._stop_event.is_set(),
+            'queue_size': self.task_queue.qsize(),
+            'current': current,
+            'last_result': last_result,
+            'ops_per_sec': self.get_rate(),
+            'videos_only': True,
+        }
 
     def _is_allowed_path(self, path: Path) -> bool:
         return is_allowed_path(path, self.allowed_roots, discover_mount_points())
@@ -273,8 +309,7 @@ class BackupWorker(threading.Thread):
                         skipped += 1
                 except Exception as exc:  # noqa: BLE001 - keep worker alive
                     self.broadcast(f'[ERROR] processing file {fname}: {exc}')
-                if self._delay > 0:
-                    time.sleep(self._delay)
+                self._sleep_for_rate()
 
         result = {
             'src': str(src),

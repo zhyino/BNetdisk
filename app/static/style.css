@@ -492,3 +492,44 @@ button { cursor: pointer; }
 @supports not selector(:has(*)) {
   .mode { position: relative; }
 }
+
+
+.rate-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: rgba(255,255,255,0.05);
+  border: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 650;
+}
+.rate-control label { color: #dbe7ff; }
+.rate-input {
+  width: 72px;
+  padding: 6px 8px;
+  border-radius: 9px;
+  border: 1px solid var(--line);
+  background: rgba(8,12,24,.55);
+  color: var(--text);
+  outline: none;
+}
+.rate-input:focus {
+  border-color: rgba(79,140,255,.5);
+  box-shadow: 0 0 0 3px rgba(79,140,255,.12);
+}
+.rate-unit { color: var(--muted); margin-right: 2px; }
+.rate-presets { display: inline-flex; gap: 4px; margin-left: 2px; }
+.rate-presets .btn.mini { padding: 4px 8px; font-size: 11px; }
+
+@media (max-width: 760px) {
+  .rate-control {
+    width: 100%;
+    border-radius: 14px;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .rate-presets { width: 100%; }
+}

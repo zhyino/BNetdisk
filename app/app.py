@@ -120,8 +120,37 @@ def api_meta():
         'version': __version__,
         'videos_only': True,
         'video_exts': sorted(VIDEO_EXTS),
-        'backup_rate': BACKUP_RATE,
+        'backup_rate': worker.get_rate(),
+        'default_backup_rate': BACKUP_RATE,
         'app_port': APP_PORT,
+        'rate_min': 0,
+        'rate_max': 5000,
+    })
+
+
+@app.route('/api/rate', methods=['GET', 'POST'])
+def api_rate():
+    if request.method == 'GET':
+        return jsonify({
+            'ops_per_sec': worker.get_rate(),
+            'default_ops_per_sec': BACKUP_RATE,
+            'min': 0,
+            'max': 5000,
+            'hint': '0 means unlimited; higher values generate faster but stress remote mounts more.',
+        })
+
+    payload = request.get_json(silent=True) or {}
+    raw = payload.get('ops_per_sec', payload.get('rate', request.args.get('ops_per_sec')))
+    if raw is None:
+        return jsonify({'error': 'missing ops_per_sec', 'ops_per_sec': worker.get_rate()}), 400
+    try:
+        applied = worker.set_rate(raw)
+    except ValueError as exc:
+        return jsonify({'error': str(exc), 'ops_per_sec': worker.get_rate()}), 400
+    return jsonify({
+        'ok': True,
+        'ops_per_sec': applied,
+        'message': 'unlimited' if applied <= 0 else f'{applied:g} files/sec',
     })
 
 
