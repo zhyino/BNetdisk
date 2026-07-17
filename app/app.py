@@ -56,11 +56,16 @@ worker = BackupWorker(
     ALLOWED_ROOTS,
     ops_per_sec=BACKUP_RATE,
     service_log_path=SERVICE_LOG,
+    strict_allowed=bool(ALLOWED_ROOTS_ENV),
 )
 worker.start()
 
 
 def _allowed(path: Path) -> bool:
+    # When ALLOWED_ROOTS is explicitly configured, do not expand via live mounts.
+    # That keeps sandboxing predictable and prevents accidental access outside the allow-list.
+    if ALLOWED_ROOTS_ENV:
+        return is_allowed_path(path, ALLOWED_ROOTS)
     return is_allowed_path(path, ALLOWED_ROOTS, normalize_roots(_discover_mount_points_safe()))
 
 
@@ -94,7 +99,10 @@ def tail_file_lines(path: Path, lines: int = 100):
 
 @app.route('/')
 def index():
-    roots = _discover_mount_points_safe()
+    if ALLOWED_ROOTS_ENV and ALLOWED_ROOTS:
+        roots = [str(path) for path in ALLOWED_ROOTS]
+    else:
+        roots = _discover_mount_points_safe()
     return render_template(
         'index.html',
         roots=roots,
@@ -136,7 +144,7 @@ def api_rate():
             'default_ops_per_sec': BACKUP_RATE,
             'min': 0,
             'max': 5000,
-            'hint': '0 means unlimited; higher values generate faster but stress remote mounts more.',
+            'hint': 'Rate limits SOURCE directory scan (files/sec). Protects cloud mounts from aggressive readdir/stat. 0 = unlimited.',
         })
 
     payload = request.get_json(silent=True) or {}
@@ -157,7 +165,10 @@ def api_rate():
 @app.route('/api/roots')
 def api_roots():
     try:
-        roots = _discover_mount_points_safe()
+        if ALLOWED_ROOTS_ENV and ALLOWED_ROOTS:
+            roots = [str(path) for path in ALLOWED_ROOTS]
+        else:
+            roots = _discover_mount_points_safe()
         return jsonify({'roots': roots, 'count': len(roots)})
     except Exception as exc:  # noqa: BLE001
         return jsonify({'roots': [], 'count': 0, 'error': str(exc)}), 500

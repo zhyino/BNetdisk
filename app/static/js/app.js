@@ -17,6 +17,7 @@
     chooseDstBtn: $('chooseDstBtn'),
     srcListEl: $('srcList'),
     dstListEl: $('dstList'),
+    pairListEl: $('pairList'),
     addPairsBtn: $('addPairs'),
     clearBtn: $('clearSelected'),
     queueEl: $('queue'),
@@ -105,12 +106,16 @@
 
   function setPathChip(el, path) {
     if (!el) return;
-    el.textContent = path || '未选择';
+    const text = path || '未选择';
+    el.textContent = text;
     el.title = path || '';
+    const box = el.closest('.location');
+    if (box) box.title = path || '';
   }
 
   function buildBreadcrumb(path, which) {
     const host = which === 'src' ? els.srcBreadcrumb : els.dstBreadcrumb;
+    if (!host) return;
     const root = which === 'src' ? (state.currentSrcRoot || path) : (state.currentDstRoot || path);
     host.innerHTML = '';
 
@@ -160,7 +165,7 @@
     state.loadingRoots = true;
     els.refreshRootsBtn.disabled = true;
     const old = els.refreshRootsBtn.textContent;
-    els.refreshRootsBtn.textContent = '刷新中...';
+    els.refreshRootsBtn.textContent = '刷新中';
     try {
       els.srcRootSelect.innerHTML = '<option>加载中...</option>';
       els.dstRootSelect.innerHTML = '<option>加载中...</option>';
@@ -171,28 +176,41 @@
       populateRootSelect(els.srcRootSelect, roots, 'src');
       populateRootSelect(els.dstRootSelect, roots, 'dst');
       if (roots.length) {
-        state.currentSrcRoot = roots[0];
-        state.currentDstRoot = roots[0];
-        state.currentSrcPath = roots[0];
-        state.currentDstPath = roots[0];
+        const preferSrc = state.currentSrcRoot && roots.includes(state.currentSrcRoot)
+          ? state.currentSrcRoot
+          : roots[0];
+        const preferDst = state.currentDstRoot && roots.includes(state.currentDstRoot)
+          ? state.currentDstRoot
+          : roots[0];
+        state.currentSrcRoot = preferSrc;
+        state.currentDstRoot = preferDst;
+        els.srcRootSelect.value = preferSrc;
+        els.dstRootSelect.value = preferDst;
+        // Keep current browse path when still under the same root; otherwise jump to root.
+        if (!state.currentSrcPath || !String(state.currentSrcPath).startsWith(preferSrc)) {
+          state.currentSrcPath = preferSrc;
+        }
+        if (!state.currentDstPath || !String(state.currentDstPath).startsWith(preferDst)) {
+          state.currentDstPath = preferDst;
+        }
         await Promise.all([
           loadEntries(state.currentSrcPath, 'src'),
           loadEntries(state.currentDstPath, 'dst'),
         ]);
-        toast(`已加载 ${roots.length} 个挂载点`, 'success');
+        toast(`已刷新 ${roots.length} 个挂载点`, 'success');
       } else {
-        const msg = '<div class="err">未发现挂载点，请在 docker-compose 中映射宿主目录并重启容器。</div>';
+        const msg = '<div class="err">没有可用挂载点。请先在 docker-compose 映射目录，再点“刷新挂载点”。</div>';
         els.srcEntries.innerHTML = msg;
         els.dstEntries.innerHTML = msg;
-        toast('未发现挂载点', 'warn');
+        toast('没有可用挂载点', 'warn');
       }
     } catch (err) {
       els.srcRootSelect.innerHTML = '<option>加载失败</option>';
       els.dstRootSelect.innerHTML = '<option>加载失败</option>';
-      const msg = '<div class="err">加载挂载点失败，请点击“刷新挂载点”或检查 volumes。</div>';
+      const msg = '<div class="err">加载失败，请点“刷新挂载点”。</div>';
       els.srcEntries.innerHTML = msg;
       els.dstEntries.innerHTML = msg;
-      toast('加载挂载点失败', 'error');
+      toast('刷新挂载失败', 'error');
       console.error(err);
     } finally {
       state.loadingRoots = false;
@@ -304,44 +322,65 @@
     }
   }
 
+  function shortPath(path) {
+    if (!path) return '';
+    const parts = String(path).split('/').filter(Boolean);
+    if (parts.length <= 3) return path;
+    return '…/' + parts.slice(-3).join('/');
+  }
+
   function renderLists() {
-    els.srcListEl.innerHTML = '';
-    els.dstListEl.innerHTML = '';
-    els.srcCountEl.textContent = `源 ${state.srcs.length}`;
-    els.dstCountEl.textContent = `目标 ${state.dsts.length}`;
-    els.pairCountEl.textContent = `可配对 ${Math.min(state.srcs.length, state.dsts.length)}`;
+    const pairCount = Math.min(state.srcs.length, state.dsts.length);
+    const totalRows = Math.max(state.srcs.length, state.dsts.length);
+    if (els.srcCountEl) els.srcCountEl.textContent = `源 ${state.srcs.length}`;
+    if (els.dstCountEl) els.dstCountEl.textContent = `目标 ${state.dsts.length}`;
+    if (els.pairCountEl) els.pairCountEl.textContent = `${pairCount} 对`;
 
-    state.srcs.forEach((item, index) => {
+    if (!els.pairListEl) return;
+    els.pairListEl.innerHTML = '';
+
+    if (!totalRows) {
+      els.pairListEl.setAttribute(
+        'data-empty',
+        '还没有任务。请在上方选择源目录与目标目录后添加。'
+      );
+      return;
+    }
+    els.pairListEl.removeAttribute('data-empty');
+
+    for (let i = 0; i < totalRows; i += 1) {
+      const src = state.srcs[i];
+      const dst = state.dsts[i];
+      const ready = !!(src && dst);
       const row = document.createElement('div');
-      row.className = 'item';
-      row.innerHTML = `
-        <div class="item-main">
-          <div class="item-title"><strong>${index + 1}.</strong> ${escapeHtml(item.path)}</div>
-          <div class="item-sub">root: ${escapeHtml(item.root)}</div>
-        </div>
-        <button type="button" class="btn mini" data-remove-src="${index}">移除</button>`;
-      els.srcListEl.appendChild(row);
-    });
+      row.className = 'pair-row ' + (ready ? 'ready' : 'partial');
 
-    state.dsts.forEach((item, index) => {
-      const row = document.createElement('div');
-      row.className = 'item';
-      row.innerHTML = `
-        <div class="item-main">
-          <div class="item-title"><strong>${index + 1}.</strong> ${escapeHtml(item.path)}</div>
-          <div class="item-sub">root: ${escapeHtml(item.root)}</div>
-        </div>
-        <button type="button" class="btn mini" data-remove-dst="${index}">移除</button>`;
-      els.dstListEl.appendChild(row);
-    });
+      const srcFull = src ? src.path : '';
+      const dstFull = dst ? dst.path : '';
+      const srcShow = src ? escapeHtml(shortPath(src.path)) : '未选择';
+      const dstShow = dst ? escapeHtml(shortPath(dst.path)) : '未选择';
 
-    els.srcListEl.querySelectorAll('[data-remove-src]').forEach((btn) => {
+      row.innerHTML = `
+        <div class="pair-no">${i + 1}</div>
+        <div class="pair-side src ${src ? '' : 'missing'}">
+          <div class="pair-cell" title="${escapeHtml(srcFull)}">${srcShow}</div>
+          ${src ? `<button type="button" class="btn mini remove-src" data-remove-src="${i}" title="移除源目录">移除源</button>` : '<span class="pair-placeholder">未选源</span>'}
+        </div>
+        <div class="pair-arrow">→</div>
+        <div class="pair-side dst ${dst ? '' : 'missing'}">
+          <div class="pair-cell" title="${escapeHtml(dstFull)}">${dstShow}</div>
+          ${dst ? `<button type="button" class="btn mini remove-dst" data-remove-dst="${i}" title="移除目标目录">移除目标</button>` : '<span class="pair-placeholder">未选目标</span>'}
+        </div>`;
+      els.pairListEl.appendChild(row);
+    }
+
+    els.pairListEl.querySelectorAll('[data-remove-src]').forEach((btn) => {
       btn.onclick = () => {
         state.srcs.splice(Number(btn.getAttribute('data-remove-src')), 1);
         renderLists();
       };
     });
-    els.dstListEl.querySelectorAll('[data-remove-dst]').forEach((btn) => {
+    els.pairListEl.querySelectorAll('[data-remove-dst]').forEach((btn) => {
       btn.onclick = () => {
         state.dsts.splice(Number(btn.getAttribute('data-remove-dst')), 1);
         renderLists();
@@ -406,7 +445,7 @@
     const safe = Number.isFinite(n) ? n : 20;
     if (els.rateInput) els.rateInput.value = String(safe);
     const label = formatRate(safe);
-    if (els.rateText) els.rateText.textContent = `速率 ${label}`;
+    if (els.rateText) els.rateText.textContent = `源扫描 ${label}`;
     if (els.rateTextPanel) els.rateTextPanel.textContent = label;
     document.querySelectorAll('.rate-preset').forEach((btn) => {
       const preset = Number(btn.getAttribute('data-rate'));
@@ -434,7 +473,7 @@
     const value = rate === undefined || rate === null ? els.rateInput?.value : rate;
     const parsed = Number(value);
     if (!Number.isFinite(parsed) || parsed < 0) {
-      toast('请输入 >= 0 的速率', 'warn');
+      toast('请输入 >= 0 的源扫描速度', 'warn');
       return;
     }
     if (els.applyRateBtn) els.applyRateBtn.disabled = true;
@@ -450,7 +489,7 @@
         return;
       }
       setRateInput(data.ops_per_sec);
-      toast(`生成速度已设为 ${formatRate(data.ops_per_sec)}`, 'success');
+      toast(`源扫描速度已设为 ${formatRate(data.ops_per_sec)}（保护源/网盘读取）`, 'success');
     } catch (err) {
       toast('设置速率失败: ' + (err.message || err), 'error');
     } finally {
@@ -545,28 +584,29 @@
   els.chooseSrcBtn.onclick = () => {
     const path = state.currentSrcPath;
     const root = els.srcRootSelect.value || state.currentSrcRoot || '/';
-    if (!path) return toast('请先选择源目录', 'warn');
-    if (state.srcs.some((item) => item.path === path)) return toast('该源目录已在列表中', 'warn');
+    if (!path) return toast('请先在左侧选一个目录', 'warn');
+    if (state.srcs.some((item) => item.path === path)) return toast('这个源目录已经加过了', 'warn');
     state.srcs.push({ path, root });
     renderLists();
-    toast('已加入源目录', 'success');
+    toast('已添加源目录', 'success');
   };
 
   els.chooseDstBtn.onclick = () => {
     const path = state.currentDstPath;
     const root = els.dstRootSelect.value || state.currentDstRoot || '/';
-    if (!path) return toast('请先选择目标目录', 'warn');
+    if (!path) return toast('请先在右侧选一个目录', 'warn');
     state.dsts.push({ path, root });
     renderLists();
-    toast('已加入目标目录', 'success');
+    toast('已添加目标目录（请使用本地硬盘路径）', 'success');
   };
 
   els.addPairsBtn.onclick = async () => {
     const n = Math.min(state.srcs.length, state.dsts.length);
-    if (!n) return toast('至少需要一对源和目标（按索引配对）', 'warn');
+    if (!n) return toast('请先各选一个源和目标', 'warn');
 
     const mode = document.querySelector('input[name="mode"]:checked')?.value || 'incremental';
     const tasks = [];
+    const usedIndexes = [];
     for (let i = 0; i < n; i += 1) {
       const src = state.srcs[i];
       const dst = state.dsts[i];
@@ -582,8 +622,9 @@
         dst_root: dst.root,
         mode,
       });
+      usedIndexes.push(i);
     }
-    if (!tasks.length) return toast('没有可添加的任务', 'warn');
+    if (!tasks.length) return toast('没有可生成的任务', 'warn');
 
     els.addPairsBtn.disabled = true;
     try {
@@ -594,12 +635,33 @@
       });
       const data = await res.json();
       if (res.ok) {
-        state.srcs = state.srcs.slice(n);
-        state.dsts = state.dsts.slice(n);
+        // Only drop pairs that were actually submitted. Keep leftovers and failed pairs.
+        const submitted = new Set(usedIndexes);
+        const skippedSrcs = new Set(
+          (data.skipped || [])
+            .map((item) => item && item.task && item.task.src)
+            .filter(Boolean)
+        );
+        const keepSrcs = [];
+        const keepDsts = [];
+        const maxLen = Math.max(state.srcs.length, state.dsts.length);
+        for (let i = 0; i < maxLen; i += 1) {
+          const src = state.srcs[i];
+          const dst = state.dsts[i];
+          const wasSubmitted = submitted.has(i);
+          const serverSkipped = src && skippedSrcs.has(src.path);
+          if (wasSubmitted && !serverSkipped) {
+            continue; // successfully queued pair
+          }
+          if (src) keepSrcs.push(src);
+          if (dst) keepDsts.push(dst);
+        }
+        state.srcs = keepSrcs;
+        state.dsts = keepDsts;
         renderLists();
         loadQueue();
         const skipped = (data.skipped && data.skipped.length) || 0;
-        toast(`已添加 ${data.added || 0} 个任务${skipped ? `，跳过 ${skipped} 个` : ''}`, skipped ? 'warn' : 'success');
+        toast(`已提交 ${data.added || 0} 个任务${skipped ? `，跳过 ${skipped} 个` : ''}`, skipped ? 'warn' : 'success');
       } else {
         toast('添加失败: ' + (data.error || JSON.stringify(data)), 'error');
       }
@@ -614,7 +676,7 @@
     state.srcs = [];
     state.dsts = [];
     renderLists();
-    toast('已清空选择', 'success');
+    toast('已清空', 'success');
   };
 
   els.clearLogBtn.onclick = () => {

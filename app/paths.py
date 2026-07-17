@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
-from typing import Iterable, List, Sequence
+from typing import Iterable, List, Optional, Sequence
 
 
 SKIP_FS_TYPES = frozenset({
@@ -79,7 +79,7 @@ def path_under_root(path: Path, root: Path) -> bool:
         return False
 
 
-def is_allowed_path(path: Path, allowed_roots: Sequence[Path], extra_roots: Sequence[Path] | None = None) -> bool:
+def is_allowed_path(path: Path, allowed_roots: Sequence[Path], extra_roots: Optional[Sequence[Path]] = None) -> bool:
     try:
         path = path.resolve()
     except (OSError, RuntimeError):

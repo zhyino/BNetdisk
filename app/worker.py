@@ -21,10 +21,12 @@ class BackupWorker(threading.Thread):
         allowed_roots: Sequence[Path],
         ops_per_sec: float = 20.0,
         service_log_path: Optional[Path] = None,
+        strict_allowed: bool = False,
     ):
         super().__init__(daemon=True, name='backup-worker')
         self.task_queue = task_queue
         self.backup_dir = Path(backup_dir)
+        self.strict_allowed = bool(strict_allowed)
         self.allowed_roots: List[Path] = []
         for root in allowed_roots:
             try:
@@ -118,7 +120,7 @@ class BackupWorker(threading.Thread):
             self.ops_per_sec = rate
             self._delay = 0.0 if rate <= 0 else max(0.0, 1.0 / rate)
             applied = self.ops_per_sec
-        self.broadcast(f'[INFO] Backup rate set to {applied:g} ops/sec' + (' (unlimited)' if applied <= 0 else ''))
+        self.broadcast(f'[INFO] Source scan rate set to {applied:g} files/sec' + (' (unlimited)' if applied <= 0 else '') + ' — protects source/cloud mounts')
         return applied
 
     def get_rate(self) -> float:
@@ -145,6 +147,10 @@ class BackupWorker(threading.Thread):
         }
 
     def _is_allowed_path(self, path: Path) -> bool:
+        # strict_allowed=True: only configured roots (ALLOWED_ROOTS env).
+        # strict_allowed=False: configured roots plus currently discovered mounts.
+        if self.strict_allowed:
+            return is_allowed_path(path, self.allowed_roots)
         return is_allowed_path(path, self.allowed_roots, discover_mount_points())
 
     @staticmethod
@@ -156,10 +162,17 @@ class BackupWorker(threading.Thread):
             return not self.is_video_file(filename)
         return False
 
-    def _create_placeholder(self, dest_file: Path, overwrite: bool = False) -> bool:
+    def _create_placeholder(self, dest_file: Path, overwrite: bool = False) -> str:
+        """Create or refresh a 1KB placeholder.
+
+        Returns:
+            'created'  - new placeholder written
+            'exists'   - already present and left untouched (incremental)
+            'failed'   - write error
+        """
         try:
             if dest_file.exists() and not overwrite:
-                return True
+                return 'exists'
         except OSError:
             pass
 
@@ -167,14 +180,14 @@ class BackupWorker(threading.Thread):
             dest_file.parent.mkdir(parents=True, exist_ok=True)
         except OSError as exc:
             self.broadcast(f'[ERROR] Cannot create parent directories for {dest_file}: {exc}')
-            return False
+            return 'failed'
 
         tmp = dest_file.parent / f'.{dest_file.name}.{os.getpid()}.{threading.get_ident()}.tmp'
         try:
             with tmp.open('wb') as handle:
                 handle.write(b'\0' * PLACEHOLDER_SIZE)
             os.replace(str(tmp), str(dest_file))
-            return True
+            return 'created'
         except OSError as exc:
             try:
                 if tmp.exists():
@@ -182,7 +195,7 @@ class BackupWorker(threading.Thread):
             except OSError:
                 pass
             self.broadcast(f'[ERROR] Failed to create placeholder {dest_file}: {exc}')
-            return False
+            return 'failed'
 
     def add_task(
         self,
@@ -291,25 +304,27 @@ class BackupWorker(threading.Thread):
             rel = '' if rel == '.' else rel
             for fname in filenames:
                 try:
+                    # Rate limit is keyed off SOURCE directory walking/reads.
+                    # Even skipped files cost readdir + metadata on remote mounts.
                     if self.should_skip(fname, videos_only=videos_only):
                         skipped += 1
                         continue
                     src_file = Path(dirpath) / fname
                     target_file = dest_root / rel / fname
-                    try:
-                        if target_file.exists() and not overwrite:
-                            skipped += 1
-                            continue
-                    except OSError:
-                        pass
-                    if self._create_placeholder(target_file, overwrite=overwrite):
+                    outcome = self._create_placeholder(target_file, overwrite=overwrite)
+                    if outcome == 'created':
                         backed += 1
                         self.broadcast(f'[OK] {src_file} -> {target_file}')
+                    elif outcome == 'exists':
+                        skipped += 1
                     else:
                         skipped += 1
                 except Exception as exc:  # noqa: BLE001 - keep worker alive
                     self.broadcast(f'[ERROR] processing file {fname}: {exc}')
-                self._sleep_for_rate()
+                    skipped += 1
+                finally:
+                    # Throttle after every source file examined to avoid hammering cloud mounts.
+                    self._sleep_for_rate()
 
         result = {
             'src': str(src),
