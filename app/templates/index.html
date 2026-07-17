@@ -3,160 +3,170 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>BNetdisk · 假文件入库管理面板</title>
+  <title>BNetdisk · 假文件入库面板</title>
   <link rel="stylesheet" href="/static/style.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app">
     <header class="topbar">
       <div class="brand">
-        <div class="brand-mark" aria-hidden="true">BN</div>
-        <div class="brand-text">
-          <div class="brand-title">假文件入库管理面板</div>
-          <div class="brand-sub">BNetdisk · 源目录镜像生成占位文件</div>
+        <div class="logo" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div>
+          <div class="brand-title">假文件入库面板</div>
+          <div class="brand-sub">BNetdisk <span id="appVersion">v{{ version }}</span> · 仅生成视频占位文件</div>
         </div>
       </div>
-      <div class="topbar-actions">
-        <div class="status-pill" id="connectionStatus" title="日志连接状态">
-          <span class="status-dot"></span>
+      <div class="top-actions">
+        <div class="pill" id="connectionStatus" title="日志连接状态">
+          <i class="dot"></i>
           <span id="connectionText">连接中</span>
         </div>
-        <button id="refreshRoots" class="btn btn-ghost" type="button">刷新挂载点</button>
+        <div class="pill soft" id="ratePill" title="生成速率">
+          <span id="rateText">速率 --/s</span>
+        </div>
+        <button id="refreshRoots" class="btn ghost" type="button">刷新挂载点</button>
       </div>
     </header>
 
-    <main class="container">
-      <section class="left">
-        <div class="panel card">
-          <div class="panel-head">
+    <main class="layout">
+      <section class="col main-col">
+        <article class="card">
+          <div class="card-head">
             <div>
-              <h3>目录浏览与选择</h3>
-              <p class="panel-desc">左侧选源目录，右侧选目标目录；可进入任意子目录后再加入已选。</p>
+              <h2>目录浏览</h2>
+              <p class="muted">左侧选源，右侧选目标。点击目录进入，选中后加入任务列表。</p>
+            </div>
+            <div class="badge-row">
+              <span class="badge">仅视频</span>
+              <span class="badge quiet" id="videoExtHint" title="支持的视频扩展名">扩展名</span>
             </div>
           </div>
 
-          <div class="info-banner" id="mainNote">
-            <div class="info-icon" aria-hidden="true">i</div>
-            <div>
-              可多选源与目标；目标可重复添加，便于多个源按索引配对到同一目标。
-              <div class="info-sub">若挂载点未出现，请在 docker-compose 中映射宿主目录并重启容器。</div>
-            </div>
+          <div class="tip">
+            <strong>配对规则：</strong>第 1 源 → 第 1 目标，第 2 源 → 第 2 目标。目标可重复添加。
+            <div class="tip-sub">若挂载点缺失，请在 docker-compose 中映射宿主目录并重启容器。</div>
           </div>
 
-          <div class="quick-row">
-            <div class="quick-col browser-card src-tone">
-              <div class="browser-label">
-                <span class="tone-badge src">源</span>
-                <span>源目录选择</span>
+          <div class="browsers">
+            <div class="browser src">
+              <div class="browser-head">
+                <span class="tag src">源</span>
+                <span>源目录</span>
+                <span class="path-chip" id="srcCurrentPath" title="">未选择</span>
               </div>
-              <div class="browser">
-                <div class="browser-row">
-                  <select id="srcRootSelect" class="root-select" aria-label="源挂载点"></select>
-                  <button id="srcUpBtn" class="btn btn-soft" type="button" title="返回上层">↑ 上层</button>
-                </div>
-                <div id="srcBreadcrumb" class="breadcrumb" aria-label="源路径面包屑"></div>
-                <div id="srcEntries" class="entries" role="list"></div>
-                <div class="browser-actions">
-                  <button id="chooseSrcBtn" class="btn btn-src" type="button">加入已选（源）</button>
-                </div>
+              <div class="toolbar">
+                <select id="srcRootSelect" class="select" aria-label="源挂载点"></select>
+                <button id="srcUpBtn" class="btn soft" type="button">上层</button>
               </div>
+              <div id="srcBreadcrumb" class="crumbs"></div>
+              <div id="srcEntries" class="entries" role="list"></div>
+              <button id="chooseSrcBtn" class="btn primary block" type="button">加入已选源目录</button>
             </div>
 
-            <div class="quick-col browser-card dst-tone">
-              <div class="browser-label">
-                <span class="tone-badge dst">目标</span>
-                <span>目标目录选择</span>
+            <div class="browser dst">
+              <div class="browser-head">
+                <span class="tag dst">目标</span>
+                <span>目标目录</span>
+                <span class="path-chip" id="dstCurrentPath" title="">未选择</span>
               </div>
-              <div class="browser">
-                <div class="browser-row">
-                  <select id="dstRootSelect" class="root-select" aria-label="目标挂载点"></select>
-                  <button id="dstUpBtn" class="btn btn-soft" type="button" title="返回上层">↑ 上层</button>
-                </div>
-                <div id="dstBreadcrumb" class="breadcrumb" aria-label="目标路径面包屑"></div>
-                <div id="dstEntries" class="entries" role="list"></div>
-                <div class="browser-actions">
-                  <button id="chooseDstBtn" class="btn btn-dst" type="button">加入已选（目标）</button>
-                </div>
+              <div class="toolbar">
+                <select id="dstRootSelect" class="select" aria-label="目标挂载点"></select>
+                <button id="dstUpBtn" class="btn soft" type="button">上层</button>
               </div>
+              <div id="dstBreadcrumb" class="crumbs"></div>
+              <div id="dstEntries" class="entries" role="list"></div>
+              <button id="chooseDstBtn" class="btn accent block" type="button">加入已选目标目录</button>
             </div>
           </div>
-        </div>
+        </article>
 
-        <div class="panel card">
-          <div class="panel-head">
+        <article class="card">
+          <div class="card-head">
             <div>
-              <h3>已选择（源 / 目标）</h3>
-              <p class="panel-desc">按索引配对：第 1 源 → 第 1 目标。默认仅生成视频文件占位。</p>
+              <h2>任务配置</h2>
+              <p class="muted">确认配对后添加任务。增量会跳过已存在占位文件。</p>
             </div>
-            <div class="count-chips">
+            <div class="count-row">
               <span class="chip src" id="srcCount">源 0</span>
               <span class="chip dst" id="dstCount">目标 0</span>
+              <span class="chip" id="pairCount">可配对 0</span>
             </div>
           </div>
 
-          <div class="selected-wrap">
-            <div class="sel-col">
-              <h4>来源 Sources</h4>
-              <div id="srcList" class="pills empty-box" data-empty="尚未选择源目录"></div>
-            </div>
-            <div class="sel-col">
-              <h4>目标 Destinations</h4>
-              <div id="dstList" class="pills empty-box" data-empty="尚未选择目标目录"></div>
-            </div>
-          </div>
-
-          <div class="controls">
-            <div class="mode-row" role="radiogroup" aria-label="备份模式">
-              <label class="mode-card">
-                <input type="radio" name="mode" value="incremental" checked />
-                <span class="mode-body">
-                  <strong>增量备份</strong>
-                  <small>跳过目标已存在的占位文件</small>
-                </span>
-              </label>
-              <label class="mode-card">
-                <input type="radio" name="mode" value="full" />
-                <span class="mode-body">
-                  <strong>全量备份</strong>
-                  <small>覆盖重写目标占位文件</small>
-                </span>
-              </label>
-            </div>
-            <div class="btn-row">
-              <button id="addPairs" class="btn btn-primary" type="button">添加任务</button>
-              <button id="clearSelected" class="btn btn-danger" type="button">清空已选</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="panel card queue-card">
-          <div class="panel-head">
+          <div class="selected-grid">
             <div>
-              <h3>任务队列</h3>
-              <p class="panel-desc">已提交但尚未执行的任务。</p>
+              <h3>来源 Sources</h3>
+              <div id="srcList" class="list-box" data-empty="还没有选择源目录"></div>
             </div>
-            <span class="chip muted" id="queueCount">0 项</span>
+            <div>
+              <h3>目标 Destinations</h3>
+              <div id="dstList" class="list-box" data-empty="还没有选择目标目录"></div>
+            </div>
           </div>
-          <ul id="queue" class="queue-list"></ul>
-        </div>
+
+          <div class="mode-grid" role="radiogroup" aria-label="备份模式">
+            <label class="mode">
+              <input type="radio" name="mode" value="incremental" checked />
+              <span>
+                <strong>增量备份</strong>
+                <small>只生成目标不存在的视频占位文件</small>
+              </span>
+            </label>
+            <label class="mode">
+              <input type="radio" name="mode" value="full" />
+              <span>
+                <strong>全量备份</strong>
+                <small>覆盖重写目标中的视频占位文件</small>
+              </span>
+            </label>
+          </div>
+
+          <div class="actions">
+            <button id="addPairs" class="btn primary lg" type="button">添加任务</button>
+            <button id="clearSelected" class="btn danger lg" type="button">清空已选</button>
+          </div>
+        </article>
+
+        <article class="card">
+          <div class="card-head">
+            <div>
+              <h2>任务队列</h2>
+              <p class="muted">等待执行的任务与当前进度。</p>
+            </div>
+            <span class="chip" id="queueCount">0 项</span>
+          </div>
+          <div id="currentTask" class="current-task hidden"></div>
+          <ul id="queue" class="queue" data-empty="队列为空，添加任务后会显示在这里"></ul>
+        </article>
       </section>
 
-      <section class="right">
-        <div class="panel card log-card">
-          <div class="panel-head">
+      <aside class="col side-col">
+        <article class="card log-card">
+          <div class="card-head">
             <div>
-              <h3>运行日志</h3>
-              <p class="panel-desc">实时流式日志，仅保留最近 100 条。</p>
+              <h2>运行日志</h2>
+              <p class="muted">实时输出，仅保留最近 100 条。</p>
             </div>
-            <button id="clearLogBtn" class="btn btn-soft" type="button">清空显示</button>
+            <div class="log-actions">
+              <button id="copyLogBtn" class="btn soft" type="button">复制</button>
+              <button id="clearLogBtn" class="btn soft" type="button">清空</button>
+            </div>
           </div>
           <pre id="log" class="log" aria-live="polite"></pre>
-        </div>
-      </section>
+        </article>
+      </aside>
     </main>
   </div>
 
-  <div id="toastHost" class="toast-host" aria-live="polite" aria-atomic="true"></div>
+  <div id="toastHost" class="toasts" aria-live="polite" aria-atomic="true"></div>
+  <script>
+    window.__BNETDISK__ = {
+      version: {{ version|tojson }},
+      videoExts: {{ video_exts|tojson }}
+    };
+  </script>
   <script src="/static/js/app.js"></script>
 </body>
 </html>
